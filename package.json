@@ -1,0 +1,14 @@
+{
+  "name": "weargoods-laras-mvp",
+  "version": "1.1.0",
+  "description": "WearGoods (Laras) — Platform Digital Wardrobe dan Rekomendasi Outfit Berbasis Computer Vision & AI (Versi 1.1 Revisi MVP)",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node src/server.js",
+    "test": "node tests/run-tests.js"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  }
+}
