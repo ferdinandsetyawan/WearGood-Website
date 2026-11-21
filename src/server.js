@@ -1709,6 +1709,47 @@ function createAppServer(customDbPath) {
       // =======================================================================
       // 5. OUTFIT GENERATION & CUSTOMIZATION: /api/v1/outfits* (FR-10..FR-13)
       // =======================================================================
+      function buildOutfitReasoning({ items, occasionLabel, styleCode, styleLabel, weatherContext, lockedNames = [] }) {
+        const names = items.map((i) => (i.name || i.sub_category || '').trim().toLowerCase()).filter(Boolean);
+        const itemList =
+          names.length <= 1
+            ? names[0] || 'kombinasi pilihanmu'
+            : names.length === 2
+              ? `${names[0]} dan ${names[1]}`
+              : `${names.slice(0, -1).join(', ')}, dan ${names[names.length - 1]}`;
+        const occ = (occasionLabel || 'harian').toLowerCase();
+        const stl = (styleLabel || 'smart casual').toLowerCase();
+        const weather = (weatherContext || 'hangat').toLowerCase();
+
+        const templates = {
+          smart_casual: `${itemList.charAt(0).toUpperCase() + itemList.slice(1)} memberi keseimbangan antara tampilan rapi dan rasa nyaman untuk agenda ${occ}. Proporsi warnanya tetap terasa ${stl} dan mudah dipakai di cuaca ${weather}.`,
+          minimalist: `Kombinasi ${itemList} dipilih agar siluet untuk ${occ} terlihat bersih tanpa detail berlebihan. Palet warnanya selaras dengan karakter ${stl} dan nyaman menghadapi cuaca ${weather}.`,
+          casual: `Paduan ${itemList} terasa santai namun tetap tertata untuk ${occ}. Pilihan bahannya mendukung pergerakan leluasa di cuaca ${weather} sambil mempertahankan gaya ${stl}.`,
+          streetwear: `${itemList.charAt(0).toUpperCase() + itemList.slice(1)} menghadirkan siluet ${stl} yang tegas namun praktis untuk ${occ}, tetap terasa ringan di cuaca ${weather}.`,
+          sporty: `Setelan ${itemList} mengutamakan sirkulasi udara dan keleluasaan gerak untuk agenda ${occ} di cuaca ${weather}, selaras dengan nuansa ${stl}.`,
+          vintage: `Perpaduan ${itemList} memunculkan tekstur hangat dan klasik untuk ${occ}, memberi sentuhan ${stl} yang tetap nyaman di cuaca ${weather}.`
+        };
+
+        let text = templates[styleCode] || templates.smart_casual;
+        if (lockedNames.length > 0) {
+          const lockedText = lockedNames.map((n) => n.toLowerCase()).join(' dan ');
+          text += ` Disusun ulang dengan tetap mempertahankan ${lockedText} sebagai fokus utama.`;
+        }
+        return text;
+      }
+
+      function buildStylingNote(styleCode) {
+        const notes = {
+          smart_casual: 'Gulung lengan satu lipatan dan masukkan bagian depan atasan agar garis pinggang terlihat lebih rapi.',
+          minimalist: 'Biarkan jatuhnya potongan tetap bersih dan batasi aksesori pada satu titik fokus saja.',
+          casual: 'Padukan tanpa menyisipkan atasan secara penuh untuk memberi siluet yang lebih santai.',
+          streetwear: 'Berikan sedikit ruang gerak pada lapisan luar atau biarkan ujung atasan jatuh natural.',
+          sporty: 'Pastikan tali sepatu dan detail kecil tertata ringkas agar tetap nyaman saat banyak bergerak.',
+          vintage: 'Tambahkan aksesori bernuansa hangat seperti tas atau ikat pinggang kulit untuk mempertegas karakter klasik.'
+        };
+        return notes[styleCode] || notes.smart_casual;
+      }
+
       if (pathname === '/api/v1/outfits/generate' && method === 'POST') {
         const user = authenticate(req);
         if (!user) return sendError(res, 401, 'UNAUTHORIZED', 'Silakan login terlebih dahulu.');
@@ -1828,7 +1869,6 @@ function createAppServer(customDbPath) {
           }
         }
 
-        const itemSummary = selectedItems.map((i) => i.name.toLowerCase()).join(', ');
         const titlesByStyle = {
           smart_casual: 'Natural, tetap profesional.',
           minimalist: 'Simpel, bersih, dan terarah.',
@@ -1838,8 +1878,14 @@ function createAppServer(customDbPath) {
           vintage: 'Sentuhan klasik yang hangat.'
         };
         const title = titlesByStyle[styleCode] || 'Natural, tetap profesional.';
-        const reasoning = `Padu padan ${itemSummary} dipilih dari lemarimu untuk agenda ${occasionRow.label_id.toLowerCase()} dengan kesan ${styleRow.label_id.toLowerCase()}. Kombinasi warna dan bahannya menjaga kenyamanan di cuaca ${weatherContext.toLowerCase()} tanpa kehilangan karakter rapi.`;
-        const stylingNote = 'Gulung lengan satu lipatan dan masukkan bagian depan atasan untuk proporsi siluet yang lebih seimbang.';
+        const reasoning = buildOutfitReasoning({
+          items: selectedItems,
+          occasionLabel: occasionRow.label_id,
+          styleCode,
+          styleLabel: styleRow.label_id,
+          weatherContext
+        });
+        const stylingNote = buildStylingNote(styleCode);
 
         const now = new Date().toISOString();
         const outfitId = crypto.randomUUID();
@@ -2053,9 +2099,19 @@ function createAppServer(customDbPath) {
           }
         }
 
+        const occasionRow = db.prepare('SELECT label_id FROM occasions WHERE code = ?').get(baseOutfit.occasion_code);
+        const styleRow = db.prepare('SELECT label_id FROM styles WHERE code = ?').get(baseOutfit.style_code);
+        const lockedNames = effectiveItems.filter((x) => x.is_locked).map((x) => x.name).filter(Boolean);
         const now = new Date().toISOString();
         const newOutfitId = crypto.randomUUID();
-        const newReasoning = `${baseOutfit.ai_reasoning} (Diperbarui dengan mempertahankan item yang Anda kunci dan menyelaraskan kombinasi baru.)`;
+        const newReasoning = buildOutfitReasoning({
+          items: effectiveItems,
+          occasionLabel: occasionRow?.label_id || baseOutfit.occasion_code,
+          styleCode: baseOutfit.style_code,
+          styleLabel: styleRow?.label_id || baseOutfit.style_code,
+          weatherContext: baseOutfit.weather_context,
+          lockedNames
+        });
 
         db.prepare(`
           INSERT INTO outfits (

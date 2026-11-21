@@ -6,7 +6,7 @@
   <title>WearGoods — Personal Styling & Digital Wardrobe</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600;700&family=Great+Vibes&family=Inter:wght@400;500;600&family=Newsreader:opsz,wght@6..72,500;6..72,600;6..72,700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;1,600;1,700&family=Inter:wght@400;500;600&family=Newsreader:opsz,wght@6..72,500;6..72,600;6..72,700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
@@ -16,15 +16,17 @@
   <div id="auth-view" class="auth-layout hidden" aria-label="Halaman Masuk dan Registrasi">
     <aside class="auth-hero">
       <div class="auth-hero-top">
-        <div class="brand-logo brand-logo-light">WearGood</div>
+        <div class="brand-logo brand-logo-light">WearGoods</div>
         <h1 class="auth-hero-title" id="auth-lookbook-heading">Lebih sedikit bingung.<br />Lebih banyak jadi dirimu.</h1>
 
         <!-- Interactive Lookbook Carousel with Hotspot Pins -->
         <div class="auth-hero-image-wrap">
           <img src="/assets/look-1.png" alt="Inspirasi gaya personal WearGoods" class="auth-hero-image" id="auth-lookbook-img" />
-          <button type="button" class="hotspot-pin" style="top:34%;left:48%" data-auth-pin="Kemeja linen putih · Atasan" aria-label="Lihat detail atasan">+</button>
-          <button type="button" class="hotspot-pin" style="top:60%;left:45%" data-auth-pin="Celana tailored olive · Bawahan" aria-label="Lihat detail bawahan">+</button>
-          <button type="button" class="hotspot-pin" style="top:66%;left:62%" data-auth-pin="Tote kulit tan · Aksesori" aria-label="Lihat detail aksesori">+</button>
+          <div id="auth-hero-pins">
+            <button type="button" class="hotspot-pin" style="top:34%;left:48%" data-auth-pin="Kemeja linen putih · Atasan" aria-label="Lihat detail atasan">+</button>
+            <button type="button" class="hotspot-pin" style="top:60%;left:45%" data-auth-pin="Celana tailored olive · Bawahan" aria-label="Lihat detail bawahan">+</button>
+            <button type="button" class="hotspot-pin" style="top:66%;left:62%" data-auth-pin="Tote kulit tan · Aksesori" aria-label="Lihat detail aksesori">+</button>
+          </div>
           <div id="auth-hotspot-tooltip" class="hotspot-tooltip">Kemeja linen putih · Atasan</div>
         </div>
 
@@ -40,12 +42,7 @@
     <main class="auth-panel">
       <!-- Sub-panel A: Login (Masuk.png) -->
       <div id="auth-login-box" class="auth-form-container">
-        <div class="section-header-row">
-          <p class="eyebrow">RUANG UNTUK GAYA PERSONALMU</p>
-          <button type="button" class="demo-quick-pill" id="btn-demo-quick-login" title="Masuk otomatis dengan akun demo Nadia Putri">
-            ⚡ Akun Demo (Nadia)
-          </button>
-        </div>
+        <p class="eyebrow">RUANG UNTUK GAYA PERSONALMU</p>
         <h2 class="serif-heading-lg">Selamat datang kembali.</h2>
         <p class="subtitle-text">Masuk untuk melanjutkan eksplorasi lemarimu.</p>
 
@@ -55,19 +52,19 @@
         <form id="login-form" novalidate>
           <div class="form-group">
             <label for="login-email">Alamat email</label>
-            <input type="email" id="login-email" class="form-input" value="nadia.putri@email.com" placeholder="nama@email.com" required />
+            <input type="email" id="login-email" class="form-input" placeholder="nama@email.com" required />
           </div>
           <div class="form-group">
             <label for="login-password">Kata sandi</label>
             <div class="password-input-wrap">
-              <input type="password" id="login-password" class="form-input" value="Password123" placeholder="••••••••••••" required />
+              <input type="password" id="login-password" class="form-input" placeholder="••••••••••••" required />
               <button type="button" class="password-toggle-btn" data-toggle-pass="login-password">Lihat</button>
             </div>
           </div>
           <div class="auth-meta-row">
             <label class="checkbox-label">
-              <input type="checkbox" id="login-remember" checked />
-              <span>✓ Ingat saya</span>
+              <input type="checkbox" id="login-remember" />
+              <span>Ingat saya</span>
             </label>
             <button type="button" class="text-link-btn" id="btn-show-forgot">Lupa kata sandi?</button>
           </div>
@@ -182,9 +179,9 @@
         </form>
       </div>
 
-      <!-- Sub-panel D: Reset Kata Sandi (FR-16) -->
+      <!-- Sub-panel D: Reset Kata Sandi -->
       <div id="auth-forgot-box" class="auth-form-container hidden">
-        <p class="eyebrow">PEMULIHAN AKUN (FR-16)</p>
+        <p class="eyebrow">PEMULIHAN AKUN</p>
         <h2 class="serif-heading-lg">Reset kata sandi.</h2>
         <p class="subtitle-text">Masukkan email akunmu untuk menerima tautan token sekali pakai (berlaku 30 menit).</p>
 
@@ -193,19 +190,10 @@
         <form id="forgot-form">
           <div class="form-group">
             <label for="forgot-email">Alamat email</label>
-            <input type="email" id="forgot-email" class="form-input" placeholder="nadia.putri@email.com" required />
+            <input type="email" id="forgot-email" class="form-input" placeholder="nama@email.com" required />
           </div>
           <button type="submit" class="btn btn-primary btn-block">Kirim tautan reset</button>
         </form>
-
-        <!-- Interactive Local Simulated Email Inbox Drawer (for local demo testing without leaking in API response) -->
-        <div id="simulated-outbox-drawer" class="outbox-drawer mt-12 hidden">
-          <div class="section-header-row">
-            <span class="tiny-muted"><strong>Kotak Masuk Email Simulasi (Lokal):</strong></span>
-            <button type="button" class="btn btn-outline btn-xs" id="btn-fetch-outbox-token">Ambil Token dari Email</button>
-          </div>
-          <p class="tiny-muted mt-4" id="outbox-token-display">Klik tombol di atas untuk menyalin token dari email simulasi.</p>
-        </div>
 
         <form id="reset-confirm-form" class="mt-16 hidden">
           <div class="form-group">
@@ -235,7 +223,7 @@
     <!-- Left Sidebar (Desktop) -->
     <aside class="sidebar" aria-label="Navigasi Utama">
       <div class="sidebar-top">
-        <a href="#beranda" class="brand-logo" data-nav="beranda">WearGood</a>
+        <a href="#beranda" class="brand-logo" data-nav="beranda">WearGoods</a>
         <p class="brand-subtitle">PERSONAL STYLING</p>
 
         <nav class="sidebar-nav">
@@ -268,7 +256,7 @@
       <!-- Top Header -->
       <header class="topbar">
         <div class="topbar-left">
-          <a href="#beranda" class="brand-logo mobile-tablet-only" data-nav="beranda">WearGood</a>
+          <a href="#beranda" class="brand-logo mobile-tablet-only" data-nav="beranda">WearGoods</a>
           <div class="breadcrumb desktop-only">
             <span id="breadcrumb-current">Beranda</span>
             <span class="breadcrumb-sep">/</span>
@@ -286,8 +274,8 @@
 
         <div class="topbar-right">
           <div class="topbar-meta desktop-only">
-            <button type="button" id="topbar-quota-pill" class="quota-badge" data-nav="preferensi" title="Klik untuk melihat detail Sisa Kuota AI Harian (FR-19)">
-              Kuota AI: 50 Foto · 30 Look · 5 Mockup
+            <button type="button" id="topbar-quota-pill" class="quota-badge" data-nav="preferensi" title="Klik untuk melihat detail sisa kuota harian">
+              Sisa Kuota: 50 Foto · 30 Look · 5 Ide Item
             </button>
             <span>·</span>
             <span id="topbar-current-date">Jumat, 20 November 2026</span>
@@ -299,7 +287,7 @@
       </header>
 
       <!-- ================================================================= -->
-      <!-- PAGE 1: BERANDA (Beranda.png + Interactive Hotspots & Shuffler)   -->
+      <!-- PAGE 1: BERANDA (Beranda.png + Live Editorial Animations)         -->
       <!-- ================================================================= -->
       <main id="page-beranda" class="page-content page-fade">
         <div class="page-header-row">
@@ -312,14 +300,16 @@
         </div>
 
         <div class="beranda-grid">
-          <!-- Featured Hero Card with Interactive Hotspots & Look Switcher -->
-          <section class="hero-outfit-card">
+          <!-- Featured Hero Card -->
+          <section class="hero-outfit-card" id="beranda-hero-card">
             <div class="hero-outfit-image-col interactive-photo-stage">
               <img src="/assets/look-1.png" alt="Pilihan outfit hari ini" id="beranda-hero-img" />
-              <button type="button" class="hotspot-pin" style="top:32%;left:48%" data-hero-slot="top" aria-label="Inspeksi Atasan">+</button>
-              <button type="button" class="hotspot-pin" style="top:58%;left:45%" data-hero-slot="bottom" aria-label="Inspeksi Bawahan">+</button>
-              <button type="button" class="hotspot-pin" style="top:88%;left:44%" data-hero-slot="footwear" aria-label="Inspeksi Sepatu">+</button>
-              <button type="button" class="hotspot-pin" style="top:65%;left:62%" data-hero-slot="accessory" aria-label="Inspeksi Aksesori">+</button>
+              <div id="beranda-hero-pins">
+                <button type="button" class="hotspot-pin" style="top:32%;left:48%" data-hero-slot="top" aria-label="Inspeksi Atasan">+</button>
+                <button type="button" class="hotspot-pin" style="top:58%;left:45%" data-hero-slot="bottom" aria-label="Inspeksi Bawahan">+</button>
+                <button type="button" class="hotspot-pin" style="top:88%;left:44%" data-hero-slot="footwear" aria-label="Inspeksi Sepatu">+</button>
+                <button type="button" class="hotspot-pin" style="top:65%;left:62%" data-hero-slot="accessory" aria-label="Inspeksi Aksesori">+</button>
+              </div>
               <div id="beranda-hotspot-card" class="floating-pin-card hidden"></div>
             </div>
             <div class="hero-outfit-info-col">
@@ -331,21 +321,25 @@
                   <button type="button" class="mini-tab" data-hero-preset="2">03</button>
                 </div>
               </div>
-              <h2 class="serif-heading-lg" id="beranda-hero-title">Rapi, tanpa banyak usaha.</h2>
-              <p class="body-muted" id="beranda-hero-desc">Linen ringan dan warna bumi untuk hari kerja yang bergerak bersamamu.</p>
-              <div class="hero-meta-tags">
-                <p class="meta-bold" id="beranda-hero-count">Smart casual · 4 item milikmu</p>
-                <p class="meta-sub" id="beranda-hero-weather">Nyaman untuk cuaca hangat</p>
+              <div id="beranda-hero-text-wrap" class="hero-text-animated">
+                <h2 class="serif-heading-lg" id="beranda-hero-title">Rapi, tanpa banyak usaha.</h2>
+                <p class="body-muted" id="beranda-hero-desc">Linen ringan dan warna bumi untuk hari kerja yang bergerak bersamamu.</p>
+                <div class="hero-meta-tags">
+                  <p class="meta-bold" id="beranda-hero-count">Smart casual · 4 item milikmu</p>
+                  <p class="meta-sub" id="beranda-hero-weather">Nyaman untuk cuaca hangat</p>
+                </div>
               </div>
               <button type="button" class="btn btn-primary btn-block" id="btn-hero-detail">Lihat detail outfit</button>
             </div>
           </section>
 
-          <!-- Quick Plan Widget ("Ada rencana apa?") with Interactive Weather Chips -->
+          <!-- Quick Plan Widget ("Ada rencana apa?") -->
           <aside class="quick-plan-card">
-            <div>
-              <h2 class="serif-heading-md">Ada rencana apa?</h2>
-              <p class="small-muted">Mulai dari aktivitasmu, bukan dari isi katalog.</p>
+            <div class="quick-plan-header-row">
+              <div>
+                <h2 class="serif-heading-md">Ada rencana apa?</h2>
+                <p class="small-muted">Mulai dari aktivitasmu, bukan dari isi katalog.</p>
+              </div>
             </div>
 
             <form id="quick-plan-form" class="mt-16">
@@ -378,10 +372,22 @@
                 <label for="quick-location">Lokasi &amp; cuaca</label>
                 <input type="text" id="quick-location" class="form-input" value="Jakarta · Cuaca hangat" />
                 <div class="weather-chip-row mt-8" id="quick-weather-chips">
-                  <button type="button" class="weather-chip active" data-weather="Hangat · 28–32°C">☀ Hangat</button>
-                  <button type="button" class="weather-chip" data-weather="Sejuk · 22–26°C">⛅ Sejuk</button>
-                  <button type="button" class="weather-chip" data-weather="Hujan · Hindari warna cerah">🌧 Hujan</button>
-                  <button type="button" class="weather-chip" data-weather="Indoor ber-AC sepanjang hari">❄ AC</button>
+                  <button type="button" class="weather-chip active" data-weather="Hangat · 28–32°C">
+                    <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+                    Hangat
+                  </button>
+                  <button type="button" class="weather-chip" data-weather="Sejuk · 22–26°C">
+                    <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>
+                    Sejuk
+                  </button>
+                  <button type="button" class="weather-chip" data-weather="Hujan · Hindari warna cerah">
+                    <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M16 13v8M8 13v8M12 15v8M20 16.58A5 5 0 0 0 18 7h-1.26A8 8 0 1 0 4 15.25"/></svg>
+                    Hujan
+                  </button>
+                  <button type="button" class="weather-chip" data-weather="Indoor ber-AC sepanjang hari">
+                    <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M9.59 4.59A2 2 0 1 1 11 8H2m10.59 11.41A2 2 0 1 0 14 16H2m15.73-8.27A2.5 2.5 0 1 1 19.5 12H2"/></svg>
+                    Ber-AC
+                  </button>
                 </div>
               </div>
               <button type="submit" class="btn btn-primary btn-block">Temukan outfit saya</button>
@@ -396,7 +402,8 @@
             <h2 class="serif-heading-md">Lebih banyak kemungkinan di lemarimu</h2>
             <div class="btn-group-inline">
               <button type="button" class="btn btn-outline btn-sm" id="btn-shuffle-beranda-items" title="Acak kombinasi cepat dari isi lemari">
-                ↻ Acak kombinasi
+                <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                Acak kombinasi
               </button>
               <button type="button" class="btn btn-outline btn-sm" data-nav="lemari">Buka lemari</button>
             </div>
@@ -407,7 +414,7 @@
           </div>
 
           <div class="laras-notes-bar">
-            <span class="notes-label">WEARGOODS NOTES</span>
+            <span class="notes-label">CATATAN GAYA</span>
             <span class="notes-text" id="beranda-laras-note">Gaya yang baik dimulai dari mengenal apa yang sudah kamu punya.</span>
           </div>
         </section>
@@ -535,7 +542,7 @@
             <aside class="personal-style-card">
               <p class="eyebrow-rust">GAYA PERSONALMU</p>
               <h3 class="serif-heading-md" id="brief-persona-title">Simpel. Natural.<br />Tetap berkarakter.</h3>
-              <img src="/assets/look-1.png" alt="Gaya personal" class="personal-style-img" />
+              <div id="brief-palette-preview" class="brief-palette-grid" aria-label="Palet warna gaya personalmu"></div>
               <p class="meta-bold mt-12">Preferensi yang digunakan</p>
               <ul class="clean-list small-muted" id="brief-pref-summary">
                 <li>Warna netral &amp; bumi</li>
@@ -569,8 +576,8 @@
             <!-- Card 1: Dari Lemarimu -->
             <article class="result-look-card interactive-card">
               <div class="result-look-img-wrap">
-                <img src="/assets/look-1.png" alt="Natural, tetap profesional" id="hasil-look1-img" />
-                <span class="match-score-pill">98% Selaras</span>
+                <div id="hasil-look1-collage" class="outfit-collage-grid"></div>
+                <img src="/assets/look-1.png" alt="Natural, tetap profesional" id="hasil-look1-img" class="hidden" />
               </div>
               <p class="eyebrow mt-12">DARI LEMARIMU</p>
               <h2 class="result-look-title" id="hasil-look1-title">Natural, tetap profesional</h2>
@@ -581,7 +588,7 @@
 
               <div class="result-highlight-box">
                 <p class="highlight-label">PALING SESUAI UNTUKMU</p>
-                <p class="highlight-desc" id="hasil-look1-reason">Linen ringan, siluet rapi, dan 4 item yang sudah kamu miliki.</p>
+                <p class="highlight-desc" id="hasil-look1-reason">Linen ringan, siluet rapi, dan item yang sudah kamu miliki.</p>
               </div>
               <button type="button" class="btn btn-primary btn-block mt-12" id="btn-lihat-outfit-1">Lihat outfit 1</button>
             </article>
@@ -590,12 +597,11 @@
             <article class="result-look-card interactive-card">
               <div class="result-look-img-wrap">
                 <img src="/assets/look-2.png" alt="Rapi tanpa berlebihan" />
-                <span class="match-score-pill match-score-secondary">91% Eksplorasi</span>
               </div>
               <p class="eyebrow-rust mt-12">INSPIRASI · ITEM TAMBAHAN</p>
               <h2 class="result-look-title">Rapi tanpa berlebihan</h2>
               <p class="small-muted">Blazer navy · denim · sneakers</p>
-              <div class="result-highlight-box">
+              <div class="inspirasi-highlight-box">
                 <p class="highlight-label">INSPIRASI LEBIH FORMAL</p>
                 <p class="highlight-desc">Butuh blazer, kaus, denim &amp; sneakers yang belum ada di lemarimu.</p>
               </div>
@@ -606,12 +612,11 @@
             <article class="result-look-card interactive-card">
               <div class="result-look-img-wrap">
                 <img src="/assets/look-3.png" alt="Santai yang terencana" />
-                <span class="match-score-pill match-score-secondary">89% Eksplorasi</span>
               </div>
               <p class="eyebrow-rust mt-12">INSPIRASI · ITEM TAMBAHAN</p>
               <h2 class="result-look-title">Santai yang terencana</h2>
               <p class="small-muted">Rajut ecru · rok midi · flat shoes</p>
-              <div class="result-highlight-box">
+              <div class="inspirasi-highlight-box">
                 <p class="highlight-label">INSPIRASI LEBIH SANTAI</p>
                 <p class="highlight-desc">Butuh rajut, rok midi, flat shoes &amp; tas anyam di luar lemarimu.</p>
               </div>
@@ -625,37 +630,43 @@
               <span class="notes-text">Kami mempertimbangkan aktivitas, cuaca yang kamu isi, dan preferensi warna. Pilihan akhir tetap di tanganmu.</span>
             </div>
             <div class="results-actions-row">
-              <button type="button" class="btn btn-outline" id="btn-coba-kombinasi-lain">↻ Coba kombinasi lain (Generate Ulang)</button>
-              <button type="button" class="btn btn-outline" id="btn-hasil-need-new-item">✦ Need New Item? (Mockup AI)</button>
+              <button type="button" class="btn btn-outline" id="btn-coba-kombinasi-lain">
+                <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                Coba kombinasi lain
+              </button>
+              <button type="button" class="btn btn-outline" id="btn-hasil-need-new-item">
+                <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+                Cari Item Pelengkap
+              </button>
             </div>
           </div>
         </div>
 
-        <!-- Sub-view 2C: Detail Outfit & Kustomisasi Interaktif (Detail outfit.png + Moodboard Canvas) -->
+        <!-- Sub-view 2C: Detail Outfit & Kustomisasi Interaktif -->
         <div id="rekomendasi-detail-view" class="hidden">
           <div class="section-header-row mb-20">
             <button type="button" class="btn btn-outline btn-sm" id="btn-back-to-results">← Kembali ke rekomendasi</button>
             <div class="canvas-mode-switcher" role="tablist" aria-label="Mode tampilan visual outfit">
-              <button type="button" class="mode-tab active" id="tab-view-editorial" data-canvas-mode="editorial">Foto Editorial</button>
-              <button type="button" class="mode-tab" id="tab-view-moodboard" data-canvas-mode="moodboard">Papan Komposisi (Moodboard)</button>
+              <button type="button" class="mode-tab active" id="tab-view-moodboard" data-canvas-mode="moodboard">Susunan Pakaian</button>
+              <button type="button" class="mode-tab" id="tab-view-editorial" data-canvas-mode="editorial">Foto Referensi</button>
             </div>
           </div>
 
           <div class="detail-outfit-grid">
-            <!-- Left Visual Showcase: Editorial Photo OR Interactive Flat-Lay Moodboard -->
+            <!-- Left Visual Showcase: Interactive Flat-Lay Canvas OR Reference Photo -->
             <div class="detail-image-col">
-              <!-- Mode 1: Editorial Look Photo -->
-              <div id="detail-editorial-stage" class="interactive-photo-stage">
-                <img src="/assets/look-1.png" alt="Visualisasi Outfit" id="detail-main-img" class="detail-main-photo" />
-              </div>
-
-              <!-- Mode 2: Interactive Outfit Moodboard / Collage Canvas (Uses actual wardrobe item images!) -->
-              <div id="detail-moodboard-stage" class="moodboard-canvas hidden">
+              <!-- Mode 1: Interactive Outfit Canvas (Uses actual wardrobe item images!) -->
+              <div id="detail-moodboard-stage" class="moodboard-canvas">
                 <div class="moodboard-header">
-                  <span class="eyebrow">KANVAS INTERAKTIF LEMARIMU</span>
-                  <span class="tiny-muted">Klik item untuk kunci atau putar alternatif</span>
+                  <span class="eyebrow">SUSUNAN PAKAIAN LEMARIMU</span>
+                  <span class="tiny-muted">Klik item untuk kunci atau ganti</span>
                 </div>
                 <div id="detail-moodboard-grid" class="moodboard-grid"></div>
+              </div>
+
+              <!-- Mode 2: Editorial Reference Photo -->
+              <div id="detail-editorial-stage" class="interactive-photo-stage hidden">
+                <img src="/assets/look-1.png" alt="Visualisasi Outfit" id="detail-main-img" class="detail-main-photo" />
               </div>
 
               <p class="eyebrow mt-12" id="detail-photo-caption">LOOK 01 / SMART CASUAL</p>
@@ -679,7 +690,10 @@
 
               <div class="detail-cta-row mt-20">
                 <button type="button" class="btn btn-primary flex-1" id="btn-simpan-koleksi">Simpan ke koleksi</button>
-                <button type="button" class="btn btn-outline" id="btn-ganti-kombinasi">↻ Ganti kombinasi</button>
+                <button type="button" class="btn btn-outline" id="btn-ganti-kombinasi">
+                  <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                  Ganti kombinasi
+                </button>
               </div>
 
               <hr class="section-divider my-24" />
@@ -693,22 +707,22 @@
                 <!-- Populated dynamically with 01, 02, 03, 04 + lock/swap controls -->
               </div>
 
-              <!-- Alert for FR-12 / TC-19 when no replacement exists in category -->
+              <!-- Alert when no replacement exists in category -->
               <div id="detail-no-replacement-box" class="alert-box alert-warning mt-12 hidden">
                 <p id="detail-no-replacement-msg">Tidak ada item pengganti lain pada kategori ini di lemari Anda.</p>
-                <button type="button" class="btn btn-primary btn-sm mt-8" id="btn-trigger-need-new-from-slot">Need New Item? (Buat Mockup AI)</button>
+                <button type="button" class="btn btn-primary btn-sm mt-8" id="btn-trigger-need-new-from-slot">Cari Item Pelengkap</button>
               </div>
 
-              <!-- Re-prompt Input (FR-12: maks 10x per outfit) -->
+              <!-- Sesuaikan ulang input (maks 10x per outfit) -->
               <div class="reprompt-bar mt-16">
                 <input
                   type="text"
                   id="detail-reprompt-input"
                   class="form-input form-input-sm"
                   maxlength="300"
-                  placeholder="Re-prompt kustomisasi (misal: ganti bawahan lebih formal)..."
+                  placeholder="Sesuaikan lagi (misal: ganti bawahan lebih formal)..."
                 />
-                <button type="button" class="btn btn-outline btn-sm" id="btn-detail-reprompt">Re-prompt AI</button>
+                <button type="button" class="btn btn-outline btn-sm" id="btn-detail-reprompt">Sesuaikan ulang</button>
               </div>
 
               <!-- Catatan Styling -->
@@ -719,19 +733,20 @@
                 </p>
               </div>
 
-              <!-- Need New Item? Section (FR-14 & FR-15) -->
+              <!-- Need New Item? Section -->
               <div class="need-new-item-panel mt-20">
                 <div class="section-header-row">
                   <div>
-                    <p class="eyebrow-rust">NEED NEW ITEM? (FR-14 &amp; FR-15)</p>
-                    <h3 class="meta-bold">Analisis Pelengkap &amp; Ilustrasi Mockup AI</h3>
+                    <p class="eyebrow-rust">ITEM PELENGKAP</p>
+                    <h3 class="meta-bold">Analisis Pelengkap &amp; Saran Item Baru</h3>
                   </div>
                   <button type="button" class="btn btn-outline btn-sm" id="btn-analyze-need-new-item">
-                    ✦ Analisis &amp; Buat Mockup
+                    <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+                    Analisis &amp; Saran Item
                   </button>
                 </div>
                 <p class="tiny-muted mt-4">
-                  AI menganalisis kategori yang belum ada di outfit ini dan membuat ilustrasi item tunggal beserta kata kunci pencarian yang bisa disalin.
+                  Sistem menganalisis kategori yang belum ada di outfit ini dan menyiapkan ilustrasi item tunggal beserta kata kunci pencarian yang bisa disalin.
                 </p>
                 <div id="detail-mockup-result" class="mockup-result-card mt-12 hidden"></div>
               </div>
@@ -764,17 +779,8 @@
           <button type="button" class="btn btn-primary" id="btn-open-tambah-pakaian">+ Tambah pakaian</button>
         </div>
 
-        <!-- Interactive Wardrobe Balance Bar (Komposisi Lemari) -->
-        <div class="wardrobe-balance-card mb-20">
-          <div class="section-header-row">
-            <span class="eyebrow">KOMPOSISI LEMARIMU</span>
-            <span class="tiny-muted" id="wardrobe-readiness-badge">✓ Siap merangkai outfit</span>
-          </div>
-          <div class="balance-bars-track mt-8" id="wardrobe-balance-track"></div>
-        </div>
-
-        <!-- Search & Sort Row (FR-08) -->
-        <div class="wardrobe-controls-row">
+        <!-- Search & Sort Row -->
+        <div class="wardrobe-controls-row mt-20">
           <div class="search-input-wrap">
             <input
               type="search"
@@ -784,21 +790,6 @@
               aria-label="Cari pakaian berdasarkan sub-kategori, warna, atau motif"
             />
           </div>
-          <select id="wardrobe-color-filter" class="form-select filter-select" aria-label="Filter Warna">
-            <option value="">Warna: Semua</option>
-            <option value="Hitam">Hitam</option>
-            <option value="Putih">Putih</option>
-            <option value="Olive">Olive</option>
-            <option value="Beige">Beige</option>
-            <option value="Navy">Navy</option>
-            <option value="Abu-abu">Abu-abu</option>
-            <option value="Cokelat">Cokelat</option>
-            <option value="Tan">Tan</option>
-            <option value="Krem">Krem</option>
-            <option value="Biru">Biru</option>
-            <option value="Merah">Merah</option>
-            <option value="Hijau">Hijau</option>
-          </select>
           <select id="wardrobe-formality-filter" class="form-select filter-select" aria-label="Filter Formalitas">
             <option value="">Formalitas: Semua</option>
             <option value="casual">Casual / Santai</option>
@@ -811,8 +802,8 @@
           </select>
         </div>
 
-        <!-- Interactive Visual Color Dot Filter Bar -->
-        <div class="color-dot-bar mt-12" id="wardrobe-color-dots" aria-label="Filter Cepat Warna">
+        <!-- Interactive Visual Color Dot Filter Bar (12 Standard Colors) -->
+        <div class="color-dot-bar mt-12" id="wardrobe-color-dots" aria-label="Filter Warna">
           <button type="button" class="color-dot-btn active" data-dot-color="" title="Semua Warna">
             <span class="color-dot color-dot-all"></span><span>Semua</span>
           </button>
@@ -831,11 +822,26 @@
           <button type="button" class="color-dot-btn" data-dot-color="Navy" title="Navy">
             <span class="color-dot" style="background:#1f2d3d"></span><span>Navy</span>
           </button>
+          <button type="button" class="color-dot-btn" data-dot-color="Abu-abu" title="Abu-abu">
+            <span class="color-dot" style="background:#8b908b"></span><span>Abu-abu</span>
+          </button>
           <button type="button" class="color-dot-btn" data-dot-color="Cokelat" title="Cokelat">
             <span class="color-dot" style="background:#6e4b32"></span><span>Cokelat</span>
           </button>
           <button type="button" class="color-dot-btn" data-dot-color="Tan" title="Tan">
             <span class="color-dot" style="background:#b88b5a"></span><span>Tan</span>
+          </button>
+          <button type="button" class="color-dot-btn" data-dot-color="Krem" title="Krem">
+            <span class="color-dot" style="background:#f2ebd9;border:1px solid #d5cebd"></span><span>Krem</span>
+          </button>
+          <button type="button" class="color-dot-btn" data-dot-color="Biru" title="Biru">
+            <span class="color-dot" style="background:#4a6b8c"></span><span>Biru</span>
+          </button>
+          <button type="button" class="color-dot-btn" data-dot-color="Merah" title="Merah">
+            <span class="color-dot" style="background:#9e3f35"></span><span>Merah</span>
+          </button>
+          <button type="button" class="color-dot-btn" data-dot-color="Hijau" title="Hijau">
+            <span class="color-dot" style="background:#2f6b48"></span><span>Hijau</span>
           </button>
         </div>
 
@@ -896,7 +902,7 @@
       <!-- ================================================================= -->
       <main id="page-koleksi" class="page-content page-fade hidden">
         <div id="koleksi-saved-toast" class="sage-toast-banner mb-20 hidden">
-          <span>✓ Outfit berhasil disimpan ke Koleksi saya.</span>
+          <span>Outfit berhasil disimpan ke Koleksi saya.</span>
         </div>
 
         <div class="page-header-row">
@@ -905,7 +911,7 @@
             <h1 class="serif-heading-xl">Look yang ingin kamu ulang.</h1>
             <p class="subtitle-text">Simpan ide yang terasa paling kamu. Temukan lagi saat dibutuhkan.</p>
           </div>
-          <button type="button" class="btn btn-outline" id="btn-open-custom-mockup">+ Mockup Item Baru (AI)</button>
+          <button type="button" class="btn btn-outline" id="btn-open-custom-mockup">+ Saran Item Pelengkap</button>
         </div>
 
         <div class="section-header-row mt-16 flex-wrap-gap">
@@ -1035,20 +1041,20 @@
               <button type="submit" class="btn btn-primary btn-block mt-16">Simpan preferensi</button>
             </form>
 
-            <!-- Account Security, Password Change & Account Deletion (FR-03, FR-17, FR-20) -->
+            <!-- Account Security, Password Change & Account Deletion -->
             <div class="white-card mt-24">
               <div class="section-header-row">
                 <h2 class="card-section-title">Keamanan Akun &amp; Privasi Data (UU PDP)</h2>
-                <span id="account-email-status" class="badge-verified">✓ Email Terverifikasi</span>
+                <span id="account-email-status" class="badge-verified">Email Terverifikasi</span>
               </div>
 
               <div id="verify-email-banner" class="alert-box alert-warning mt-12 hidden">
-                <p>Email Anda belum diverifikasi. Verifikasi email untuk mengaktifkan fitur Generasi Mockup AI (FR-20).</p>
-                <button type="button" class="btn btn-primary btn-sm mt-8" id="btn-verify-email-now">Verifikasi Email Sekarang (Simulasi)</button>
+                <p>Email Anda belum diverifikasi. Verifikasi email untuk mengaktifkan fitur saran item pelengkap.</p>
+                <button type="button" class="btn btn-primary btn-sm mt-8" id="btn-verify-email-now">Verifikasi Email Sekarang</button>
               </div>
 
               <form id="change-password-form" class="mt-16">
-                <h3 class="meta-bold">Ganti Kata Sandi (FR-03)</h3>
+                <h3 class="meta-bold">Ganti Kata Sandi</h3>
                 <div id="password-change-msg" class="alert-box mt-8 hidden"></div>
                 <div class="form-row-2 mt-8">
                   <div class="form-group">
@@ -1066,9 +1072,9 @@
               <hr class="section-divider my-24" />
 
               <div>
-                <h3 class="meta-bold text-danger">Hapus Akun Permanen (FR-17 — Hak Penghapusan Data)</h3>
+                <h3 class="meta-bold text-danger">Hapus Akun Permanen</h3>
                 <p class="small-muted mt-4">
-                  Tindakan ini permanen. Seluruh profil, foto pakaian, outfit, dan hasil mockup langsung dicabut aksesnya dan dihapus permanen dari penyimpanan paling lambat 30 hari.
+                  Tindakan ini permanen. Seluruh profil, foto pakaian, outfit, dan saran item langsung dicabut aksesnya dan dihapus permanen dari penyimpanan paling lambat 30 hari.
                 </p>
                 <div class="form-row-2 mt-12">
                   <input type="password" id="delete-acc-password" class="form-input" placeholder="Konfirmasi kata sandi untuk hapus akun" />
@@ -1079,11 +1085,11 @@
             </div>
           </div>
 
-          <!-- Right Sidebar Cards: Live Dynamic Arah Gayamu & Kuota AI (FR-19) -->
+          <!-- Right Sidebar Cards: Arah Gayamu & Kuota Harian -->
           <aside class="preferensi-side-col">
             <div class="sage-info-card">
-              <p class="eyebrow">ARAH GAYAMU (LIVE PREVIEW)</p>
-              <h3 class="serif-heading-md" id="persona-live-title">Natural essentials</h3>
+              <p class="eyebrow">ARAH GAYAMU</p>
+              <h3 class="serif-heading-md" id="persona-live-title">Simpel &amp; rapi</h3>
               <p class="body-muted mt-8" id="persona-live-desc">Netral, mudah dipadukan, dan nyaman untuk keseharian.</p>
 
               <!-- Live Interactive Palette Preview Bar -->
@@ -1097,15 +1103,15 @@
               <button type="button" class="btn btn-white btn-block mt-16" data-nav="cari-outfit">Lihat rekomendasi</button>
             </div>
 
-            <!-- Kuota Penggunaan AI Harian (FR-19) -->
+            <!-- Kuota Penggunaan Harian -->
             <div class="white-card mt-20">
-              <p class="eyebrow">KUOTA HARIAN AI (FR-19)</p>
+              <p class="eyebrow">KUOTA HARIAN</p>
               <h3 class="card-section-title mt-4">Sisa Kuota Hari Ini</h3>
               <p class="tiny-muted" id="quota-reset-label">Reset otomatis pukul 00:00 WIB</p>
 
               <div class="quota-item mt-16">
                 <div class="quota-header">
-                  <span>Pengenalan Foto (AI Recognize)</span>
+                  <span>Pengenalan Foto Pakaian</span>
                   <strong id="quota-recognize-text">50 / 50</strong>
                 </div>
                 <div class="progress-track"><div id="quota-recognize-bar" class="progress-fill" style="width:100%"></div></div>
@@ -1113,7 +1119,7 @@
 
               <div class="quota-item mt-12">
                 <div class="quota-header">
-                  <span>Generasi &amp; Re-prompt Outfit</span>
+                  <span>Generasi &amp; Kustomisasi Outfit</span>
                   <strong id="quota-outfit-text">30 / 30</strong>
                 </div>
                 <div class="progress-track"><div id="quota-outfit-bar" class="progress-fill" style="width:100%"></div></div>
@@ -1121,7 +1127,7 @@
 
               <div class="quota-item mt-12">
                 <div class="quota-header">
-                  <span>Mockup Item Baru (Need New Item?)</span>
+                  <span>Saran Item Pelengkap</span>
                   <strong id="quota-mockup-text">5 / 5</strong>
                 </div>
                 <div class="progress-track"><div id="quota-mockup-bar" class="progress-fill" style="width:100%"></div></div>
@@ -1194,25 +1200,22 @@
         </div>
       </div>
 
-      <!-- Batch Review Queue with Thumbnails & Before/After Backdrop Preview (FR-18) -->
+      <!-- Batch Review Queue with Thumbnails -->
       <div id="batch-queue-section" class="batch-queue-box mt-16 hidden">
         <div class="section-header-row">
-          <span class="meta-bold" id="batch-queue-status">Antrean Tinjauan AI (1 foto)</span>
+          <span class="meta-bold" id="batch-queue-status">Antrean Foto Pakaian (1 foto)</span>
           <button type="button" class="btn btn-primary btn-sm" id="btn-save-all-batch">Simpan Semua yang Valid</button>
         </div>
         <div id="batch-queue-items" class="batch-queue-list mt-8"></div>
 
-        <!-- Interactive Before/After Studio Backdrop Preview -->
+        <!-- Thumbnail & Privacy Preview -->
         <div id="upload-preview-stage" class="upload-preview-stage mt-12 hidden">
           <div class="preview-img-box" id="upload-preview-img-box">
             <img src="/assets/item-1.png" alt="Pratinjau foto pakaian" id="upload-active-preview-img" />
           </div>
           <div class="preview-meta-col">
-            <span class="badge-verified" id="upload-bg-status-badge">✓ Latar Studio Dinormalkan</span>
-            <p class="tiny-muted mt-4" id="upload-exif-status">✓ Metadata EXIF &amp; GPS telah dibersihkan</p>
-            <button type="button" class="btn btn-outline btn-xs mt-8" id="btn-toggle-studio-backdrop">
-              Bandingkan Latar Studio / Asli
-            </button>
+            <p class="meta-bold">Pratinjau foto pakaian</p>
+            <p class="tiny-muted mt-4" id="upload-exif-status">Metadata lokasi (EXIF &amp; GPS) dihapus otomatis saat disimpan.</p>
           </div>
         </div>
       </div>
@@ -1435,23 +1438,26 @@
       </p>
       <div id="insp-mockup-container" class="mt-12 hidden"></div>
       <button type="button" class="btn btn-primary btn-block mt-20" id="btn-insp-cari-lemari">Cari dari lemari saya</button>
-      <button type="button" class="btn btn-outline btn-block mt-8" id="btn-insp-generate-mockup">✦ Buat Mockup Ilustrasi AI (Need New Item?)</button>
+      <button type="button" class="btn btn-outline btn-block mt-8" id="btn-insp-generate-mockup">
+        <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+        Buat Saran &amp; Ilustrasi Item
+      </button>
       <button type="button" class="btn btn-outline btn-block mt-8" data-close-modal="modal-inspirasi">Tutup</button>
     </div>
   </div>
 
-  <!-- Modal 6: Custom Mockup Request (FR-15 — Permintaan Kustom Tanpa Outfit) -->
+  <!-- Modal 6: Custom Item Suggestion Request -->
   <div id="modal-custom-mockup" class="modal-overlay hidden" role="dialog" aria-modal="true">
     <div class="modal-card">
       <div class="modal-header">
         <div>
-          <p class="eyebrow-rust">NEED NEW ITEM? (FR-15)</p>
-          <h2 class="serif-heading-md">Generasi Mockup Item Baru</h2>
+          <p class="eyebrow-rust">SARAN ITEM PELENGKAP</p>
+          <h2 class="serif-heading-md">Buat Saran Item Baru</h2>
         </div>
         <button type="button" class="btn btn-outline btn-sm" data-close-modal="modal-custom-mockup">Tutup</button>
       </div>
       <p class="small-muted mt-8">
-        Deskripsikan item pakaian yang ingin kamu eksplorasi (maks. 300 karakter). AI akan membuat ilustrasi berlatar polos beserta kata kunci pencarian Bahasa Indonesia dan Inggris.
+        Deskripsikan item pakaian yang ingin kamu eksplorasi (maks. 300 karakter). Sistem akan menyiapkan ilustrasi sederhana beserta kata kunci pencarian dalam Bahasa Indonesia dan Inggris.
       </p>
       <form id="custom-mockup-form" class="mt-16">
         <div class="form-group">
@@ -1476,16 +1482,16 @@
             required
           ></textarea>
         </div>
-        <button type="submit" class="btn btn-primary btn-block" id="btn-submit-custom-mockup">Buat Ilustrasi Mockup AI</button>
+        <button type="submit" class="btn btn-primary btn-block" id="btn-submit-custom-mockup">Buat Ilustrasi &amp; Kata Kunci</button>
       </form>
       <div id="custom-mockup-output" class="mt-16 hidden"></div>
     </div>
   </div>
 
-  <!-- Modal 7: Custom Editorial Rename / Prompt Modal (replaces window.prompt) -->
+  <!-- Modal 7: Custom Editorial Rename Modal -->
   <div id="modal-rename-outfit" class="modal-overlay hidden" role="dialog" aria-modal="true">
     <div class="modal-card modal-sm">
-      <p class="eyebrow">KOLEKSI PERSONAL (FR-13)</p>
+      <p class="eyebrow">KOLEKSI PERSONAL</p>
       <h2 class="serif-heading-md mt-4">Ubah nama outfit</h2>
       <form id="rename-outfit-form" class="mt-16">
         <input type="hidden" id="rename-outfit-id" />
@@ -1517,7 +1523,7 @@
   <!-- Modal 9: Toast / Success Confirmation (Feedback diterima.png & Preferensi tersimpan.png) -->
   <div id="modal-success-toast" class="modal-overlay hidden" role="dialog" aria-modal="true">
     <div class="modal-card modal-sm">
-      <p class="eyebrow-green">✓ BERHASIL</p>
+      <p class="eyebrow-green">BERHASIL</p>
       <h2 class="serif-heading-lg mt-8" id="toast-modal-title">Preferensi diperbarui.</h2>
       <p class="body-muted mt-8" id="toast-modal-desc">
         Pilihan berikutnya akan mempertimbangkan gaya dan kenyamananmu.

@@ -9,7 +9,7 @@ const state = {
   usage: null,
   currentPage: 'beranda',
   cariSubView: 'brief', // 'brief' | 'hasil' | 'detail'
-  detailCanvasMode: 'editorial', // 'editorial' | 'moodboard'
+  detailCanvasMode: 'moodboard', // 'moodboard' (default) | 'editorial'
   wardrobe: {
     items: [],
     total: 0,
@@ -56,6 +56,12 @@ const CATEGORY_NAMES = {
   one_piece: 'TERUSAN'
 };
 
+const ICONS = {
+  lock: '<svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>',
+  unlock: '<svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>',
+  refresh: '<svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>'
+};
+
 const LOOKBOOK_PRESETS = [
   {
     eyebrow: 'PILIHAN HARI INI / 01',
@@ -65,7 +71,14 @@ const LOOKBOOK_PRESETS = [
     caption: 'Pakai yang kamu punya. Temukan kemungkinan baru.',
     weather: 'Nyaman untuk cuaca hangat',
     occasion: 'kerja_kantor',
-    style: 'smart_casual'
+    style: 'smart_casual',
+    usesWardrobeSlots: true,
+    pins: [
+      { top: '32%', left: '48%', slot: 'top', label: 'Kemeja linen putih · Atasan' },
+      { top: '58%', left: '45%', slot: 'bottom', label: 'Celana tailored olive · Bawahan' },
+      { top: '88%', left: '44%', slot: 'footwear', label: 'Loafers kulit · Sepatu' },
+      { top: '65%', left: '62%', slot: 'accessory', label: 'Tote kulit tan · Aksesori' }
+    ]
   },
   {
     eyebrow: 'PILIHAN HARI INI / 02',
@@ -75,7 +88,14 @@ const LOOKBOOK_PRESETS = [
     caption: 'Eksplorasi siluet smart casual yang fleksibel sepanjang hari.',
     weather: 'Ideal untuk ruangan ber-AC & sore sejuk',
     occasion: 'presentasi_kampus',
-    style: 'smart_casual'
+    style: 'smart_casual',
+    count: 'Smart casual · Referensi tambahan',
+    usesWardrobeSlots: false,
+    pins: [
+      { top: '30%', left: '48%', label: 'Blazer navy · Referensi luaran' },
+      { top: '44%', left: '49%', label: 'Kaus katun putih · Atasan dasar' },
+      { top: '64%', left: '47%', label: 'Denim lurus · Referensi bawahan' }
+    ]
   },
   {
     eyebrow: 'PILIHAN HARI INI / 03',
@@ -85,9 +105,38 @@ const LOOKBOOK_PRESETS = [
     caption: 'Kombinasi warna netral yang tenang dan mudah diulang.',
     weather: 'Adem untuk jalan santai & hangout',
     occasion: 'hangout',
-    style: 'minimalist'
+    style: 'minimalist',
+    count: 'Santai · Referensi akhir pekan',
+    usesWardrobeSlots: false,
+    pins: [
+      { top: '35%', left: '48%', label: 'Rajut ecru · Referensi atasan' },
+      { top: '62%', left: '46%', label: 'Rok midi krem · Referensi bawahan' },
+      { top: '66%', left: '62%', label: 'Tas anyam · Referensi aksesori' }
+    ]
   }
 ];
+
+function renderOutfitCollageCellsHtml(items = []) {
+  const validItems = (items || []).filter((it) => it && !it.is_deleted && it.image_url);
+  if (validItems.length === 0) return '';
+  const slice = validItems.slice(0, 4);
+  const fullFirst = slice.length === 3 || slice.length === 1;
+  return slice
+    .map(
+      (it, idx) => `
+        <div class="outfit-collage-cell${fullFirst && idx === 0 ? ' outfit-collage-cell--full' : ''}">
+          <img src="${it.image_url}" alt="${escapeHtml(it.name)}" />
+          <span class="outfit-collage-tag">${escapeHtml(it.name)}</span>
+        </div>`
+    )
+    .join('');
+}
+
+function renderOutfitCollageHtml(items = [], extraClass = '') {
+  const cells = renderOutfitCollageCellsHtml(items);
+  if (!cells) return '';
+  return `<div class="outfit-collage-grid ${extraClass}">${cells}</div>`;
+}
 
 const LARAS_NOTES_QUOTES = [
   'Gaya yang baik dimulai dari mengenal apa yang sudah kamu punya.',
@@ -248,7 +297,7 @@ async function initApp() {
       const meData = await apiFetch('/api/v1/users/me');
       state.user = meData.user;
     } else {
-      // Try httpOnly cookie refresh first, otherwise auto-login demo account Nadia on first visit
+      // Try httpOnly cookie refresh; if absent/expired show clean login screen
       const refreshRes = await fetch('/api/v1/auth/refresh', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -260,12 +309,8 @@ async function initApp() {
         setAuthTokens(rData.access_token);
         state.user = rData.user;
       } else {
-        const loginData = await apiFetch('/api/v1/auth/login', {
-          method: 'POST',
-          body: JSON.stringify({ email: 'nadia.putri@email.com', password: 'Password123', remember_me: true })
-        });
-        setAuthTokens(loginData.access_token);
-        state.user = loginData.user;
+        showAuthView('login');
+        return;
       }
     }
     await loadAllAppData();
@@ -396,14 +441,14 @@ function bindNavigationEvents() {
 
   document.getElementById('btn-help-info').addEventListener('click', () => {
     showToastModal(
-      'Panduan Interaktif WearGoods',
-      'Alur 5 Langkah (NFR-04): (1) Buka Lemari & klik Tambah Pakaian, (2) Pilih 1–10 foto pakaian, (3) Simpan Semua, (4) Buka Cari Outfit & pilih aktivitas + gaya, (5) Klik Buat Rekomendasi Outfit.'
+      'Panduan Penggunaan WearGoods',
+      'Alur 5 Langkah: (1) Buka Lemari & klik Tambah Pakaian, (2) Pilih 1–10 foto pakaian, (3) Simpan Semua, (4) Buka Cari Outfit & pilih aktivitas serta gaya, (5) Klik Buat Rekomendasi Outfit.'
     );
   });
 }
 
 // --------------------------------------------------------------------------
-// User Header & Daily AI Quota Rendering (FR-19)
+// User Header & Daily Quota Rendering
 // --------------------------------------------------------------------------
 function renderUserHeaderAndQuota() {
   if (!state.user) return;
@@ -417,7 +462,7 @@ function renderUserHeaderAndQuota() {
   if (state.usage && state.usage.usage) {
     const u = state.usage.usage;
     document.getElementById('topbar-quota-pill').textContent =
-      `Kuota AI: ${u.recognize.remaining} Foto · ${u.outfit.remaining} Look · ${u.mockup.remaining} Mockup`;
+      `Sisa Kuota: ${u.recognize.remaining} Foto · ${u.outfit.remaining} Look · ${u.mockup.remaining} Ide Item`;
 
     document.getElementById('quota-recognize-text').textContent = `${u.recognize.remaining} / ${u.recognize.limit} tersisa`;
     document.getElementById('quota-recognize-bar').style.width = `${(u.recognize.remaining / u.recognize.limit) * 100}%`;
@@ -447,6 +492,31 @@ function bindAuthEvents() {
   document.getElementById('btn-forgot-back').addEventListener('click', () => showAuthView('login'));
 
   // Interactive Lookbook Tabs & Hotspots on Auth Hero Panel
+  function renderAuthPins(preset) {
+    const pinsContainer = document.getElementById('auth-hero-pins');
+    const tooltip = document.getElementById('auth-hotspot-tooltip');
+    if (!pinsContainer) return;
+    const pins = preset.pins || [];
+    pinsContainer.innerHTML = pins
+      .map(
+        (pin, i) => `
+        <button type="button" class="hotspot-pin${i === 0 ? ' active' : ''}" style="top:${pin.top};left:${pin.left}" data-auth-pin="${escapeHtml(pin.label)}" aria-label="Lihat detail item">+</button>`
+      )
+      .join('');
+    if (tooltip && pins[0]) {
+      tooltip.textContent = pins[0].label;
+    }
+    pinsContainer.querySelectorAll('[data-auth-pin]').forEach((pin) => {
+      pin.addEventListener('click', () => {
+        pinsContainer.querySelectorAll('[data-auth-pin]').forEach((p) => p.classList.remove('active'));
+        pin.classList.add('active');
+        if (tooltip) tooltip.textContent = pin.dataset.authPin;
+      });
+    });
+  }
+
+  renderAuthPins(LOOKBOOK_PRESETS[0]);
+
   document.querySelectorAll('[data-lookbook-idx]').forEach((tab) => {
     tab.addEventListener('click', () => {
       const idx = Number(tab.dataset.lookbookIdx);
@@ -454,15 +524,7 @@ function bindAuthEvents() {
       document.querySelectorAll('[data-lookbook-idx]').forEach((t) => t.classList.toggle('active', t === tab));
       document.getElementById('auth-lookbook-img').src = preset.img;
       document.getElementById('auth-lookbook-caption').textContent = preset.caption;
-      document.getElementById('auth-hotspot-tooltip').textContent = preset.title;
-    });
-  });
-
-  document.querySelectorAll('[data-auth-pin]').forEach((pin) => {
-    pin.addEventListener('click', () => {
-      document.querySelectorAll('[data-auth-pin]').forEach((p) => p.classList.remove('active'));
-      pin.classList.add('active');
-      document.getElementById('auth-hotspot-tooltip').textContent = pin.dataset.authPin;
+      renderAuthPins(preset);
     });
   });
 
@@ -495,13 +557,6 @@ function bindAuthEvents() {
       const seg = document.getElementById(id);
       seg.className = `strength-seg ${idx < score ? cls : ''}`;
     });
-  });
-
-  // 1-Click Quick Demo Login
-  document.getElementById('btn-demo-quick-login').addEventListener('click', async () => {
-    document.getElementById('login-email').value = 'nadia.putri@email.com';
-    document.getElementById('login-password').value = 'Password123';
-    document.getElementById('login-form').requestSubmit();
   });
 
   // Login Submit
@@ -615,30 +670,11 @@ function bindAuthEvents() {
       msgBox.textContent = data.message;
       msgBox.classList.remove('hidden');
 
-      document.getElementById('simulated-outbox-drawer').classList.remove('hidden');
       document.getElementById('reset-confirm-form').classList.remove('hidden');
     } catch (err) {
       msgBox.className = 'alert-box alert-error';
       msgBox.textContent = err.message;
       msgBox.classList.remove('hidden');
-    }
-  });
-
-  // Simulated local email inbox token fetcher for demo testing
-  document.getElementById('btn-fetch-outbox-token').addEventListener('click', async () => {
-    const email = document.getElementById('forgot-email').value.trim();
-    const disp = document.getElementById('outbox-token-display');
-    try {
-      const res = await apiFetch(`/api/v1/dev/outbox?email=${encodeURIComponent(email)}`);
-      const latest = (res.items || []).find((m) => m.token_type === 'password_reset');
-      if (latest) {
-        document.getElementById('reset-token-input').value = latest.raw_token;
-        disp.textContent = `✓ Token otomatis disalin dari email "${latest.subject}".`;
-      } else {
-        disp.textContent = 'Tidak ada email reset untuk alamat tersebut (pastikan email terdaftar).';
-      }
-    } catch {
-      disp.textContent = 'Gagal memuat kotak masuk simulasi.';
     }
   });
 
@@ -722,52 +758,105 @@ function renderBeranda() {
 }
 
 function bindBerandaEvents() {
-  // Interactive Hero Look Switcher (01, 02, 03)
-  document.querySelectorAll('[data-hero-preset]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const idx = Number(btn.dataset.heroPreset);
-      const preset = LOOKBOOK_PRESETS[idx] || LOOKBOOK_PRESETS[0];
-      document.querySelectorAll('[data-hero-preset]').forEach((b) => b.classList.toggle('active', b === btn));
+  let activeHeroIdx = 0;
 
+  function renderHeroHotspots(preset) {
+    const pinsEl = document.getElementById('beranda-hero-pins');
+    const floatingCard = document.getElementById('beranda-hotspot-card');
+    if (!pinsEl) return;
+    const pins = preset.pins || [];
+    pinsEl.innerHTML = pins
+      .map(
+        (pin, i) => `
+        <button type="button" class="hotspot-pin" style="top:${pin.top};left:${pin.left}" data-pin-idx="${i}" aria-label="Lihat detail ${escapeHtml(pin.label)}">+</button>`
+      )
+      .join('');
+
+    pinsEl.querySelectorAll('[data-pin-idx]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        pinsEl.querySelectorAll('[data-pin-idx]').forEach((p) => p.classList.remove('active'));
+        btn.classList.add('active');
+        const pin = pins[Number(btn.dataset.pinIdx)];
+        if (!pin || !floatingCard) return;
+
+        if (preset.usesWardrobeSlots && pin.slot) {
+          const matched = state.wardrobe.items.find((i) => i.category === pin.slot) || state.wardrobe.items[0];
+          if (!matched) {
+            floatingCard.innerHTML = `<span class="small-muted">${escapeHtml(pin.label)}</span>`;
+          } else {
+            floatingCard.innerHTML = `
+              <div>
+                <p class="eyebrow">${escapeHtml(CATEGORY_NAMES[matched.category] || 'ITEM LEMARI')}</p>
+                <p class="meta-bold">${escapeHtml(matched.name)}</p>
+                <p class="tiny-muted">${escapeHtml(matched.characteristics?.material || 'Katun')} · ${escapeHtml(matched.primary_color)}</p>
+              </div>
+              <button type="button" class="btn btn-outline btn-xs" id="btn-hotspot-inspect">Detail</button>
+            `;
+            floatingCard.classList.remove('hidden');
+            const inspectBtn = document.getElementById('btn-hotspot-inspect');
+            if (inspectBtn) inspectBtn.addEventListener('click', () => openItemDetailModal(matched.item_id));
+            return;
+          }
+        } else {
+          const parts = pin.label.split('·');
+          floatingCard.innerHTML = `
+            <div>
+              <p class="eyebrow-rust">${escapeHtml((parts[1] || 'REFERENSI').trim())}</p>
+              <p class="meta-bold">${escapeHtml((parts[0] || pin.label).trim())}</p>
+              <p class="tiny-muted">Inspirasi gaya (di luar lemari)</p>
+            </div>
+          `;
+        }
+        floatingCard.classList.remove('hidden');
+      });
+    });
+  }
+
+  function applyHeroPreset(idx, withFade = true) {
+    activeHeroIdx = idx % LOOKBOOK_PRESETS.length;
+    const preset = LOOKBOOK_PRESETS[activeHeroIdx] || LOOKBOOK_PRESETS[0];
+
+    document.querySelectorAll('[data-hero-preset]').forEach((b, i) => {
+      b.classList.toggle('active', i === activeHeroIdx);
+    });
+
+    const textWrap = document.getElementById('beranda-hero-text-wrap');
+    const updateDom = () => {
       document.getElementById('beranda-hero-eyebrow').textContent = preset.eyebrow;
       document.getElementById('beranda-hero-title').textContent = preset.title;
       document.getElementById('beranda-hero-desc').textContent = preset.desc;
       document.getElementById('beranda-hero-img').src = preset.img;
       document.getElementById('beranda-hero-weather').textContent = preset.weather;
-      document.getElementById('beranda-hotspot-card').classList.add('hidden');
-    });
-  });
-
-  // Interactive Photo Hotspot Pins on Beranda Hero
-  document.querySelectorAll('[data-hero-slot]').forEach((pin) => {
-    pin.addEventListener('click', (e) => {
-      e.stopPropagation();
-      document.querySelectorAll('[data-hero-slot]').forEach((p) => p.classList.remove('active'));
-      pin.classList.add('active');
-
-      const slot = pin.dataset.heroSlot;
-      const matched =
-        state.wardrobe.items.find((i) => i.category === slot) ||
-        state.wardrobe.items[0];
-      const floatingCard = document.getElementById('beranda-hotspot-card');
-
-      if (!matched) {
-        floatingCard.innerHTML = `<span class="small-muted">Belum ada item pada kategori ini di lemarimu.</span>`;
+      const countEl = document.getElementById('beranda-hero-count');
+      if (countEl && !preset.usesWardrobeSlots) {
+        countEl.textContent = preset.count || 'Smart casual · Referensi';
       } else {
-        floatingCard.innerHTML = `
-          <div>
-            <p class="eyebrow">${escapeHtml(CATEGORY_NAMES[matched.category] || 'ITEM LEMARI')}</p>
-            <p class="meta-bold">${escapeHtml(matched.name)}</p>
-            <p class="tiny-muted">${escapeHtml(matched.characteristics?.material || 'Katun')} · ${escapeHtml(matched.primary_color)}</p>
-          </div>
-          <button type="button" class="btn btn-outline btn-xs" id="btn-hotspot-inspect">Detail</button>
-        `;
+        renderBeranda();
       }
-      floatingCard.classList.remove('hidden');
-      const inspectBtn = document.getElementById('btn-hotspot-inspect');
-      if (inspectBtn && matched) {
-        inspectBtn.addEventListener('click', () => openItemDetailModal(matched.item_id));
-      }
+      document.getElementById('beranda-hotspot-card').classList.add('hidden');
+      renderHeroHotspots(preset);
+    };
+
+    if (withFade && textWrap) {
+      textWrap.classList.add('switching');
+      setTimeout(() => {
+        updateDom();
+        textWrap.classList.remove('switching');
+      }, 180);
+    } else {
+      updateDom();
+    }
+  }
+
+  // Initial pins setup for Look 01
+  renderHeroHotspots(LOOKBOOK_PRESETS[0]);
+
+  // Interactive Hero Look Switcher (01, 02, 03) - User-triggered only
+  document.querySelectorAll('[data-hero-preset]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const idx = Number(btn.dataset.heroPreset);
+      applyHeroPreset(idx, true);
     });
   });
 
@@ -797,7 +886,7 @@ function bindBerandaEvents() {
     const quote = LARAS_NOTES_QUOTES[state.berandaShuffleOffset % LARAS_NOTES_QUOTES.length];
     document.getElementById('beranda-laras-note').textContent = quote;
     renderBeranda();
-    showFloatingToast('Kombinasi item lemari diacak!');
+    showFloatingToast('Kombinasi item lemari diperbarui.');
   });
 
   document.getElementById('btn-hero-detail').addEventListener('click', () => {
@@ -970,7 +1059,7 @@ function bindCariOutfitEvents() {
       state.savedOutfits = savedRes.items;
       renderKoleksi(true);
       navigateTo('koleksi');
-      showFloatingToast('✓ Outfit disimpan ke Koleksi personalmu.');
+      showFloatingToast('Outfit disimpan ke Koleksi personalmu.');
     } catch (err) {
       showToastModal('Gagal Menyimpan', err.message);
     }
@@ -1017,7 +1106,7 @@ function bindCariOutfitEvents() {
     if (!state.activeInspiration) return;
     const container = document.getElementById('insp-mockup-container');
     container.classList.remove('hidden');
-    container.innerHTML = `<p class="small-muted">Sedang merangkai ilustrasi Mockup AI...</p>`;
+    container.innerHTML = `<p class="small-muted">Sedang menyiapkan saran &amp; ilustrasi item...</p>`;
     try {
       const createRes = await apiFetch('/api/v1/mockups', {
         method: 'POST',
@@ -1114,6 +1203,18 @@ function renderHasilRekomendasi() {
   document.getElementById('hasil-look1-items').textContent = o.items.map((i) => i.sub_category || i.name).join(' · ');
   document.getElementById('hasil-look1-reason').textContent = o.ai_reasoning;
 
+  const collageEl = document.getElementById('hasil-look1-collage');
+  const fallbackImg = document.getElementById('hasil-look1-img');
+  const cellsHtml = renderOutfitCollageCellsHtml(o.items);
+  if (collageEl && cellsHtml) {
+    collageEl.innerHTML = cellsHtml;
+    collageEl.classList.remove('hidden');
+    if (fallbackImg) fallbackImg.classList.add('hidden');
+  } else {
+    if (collageEl) collageEl.classList.add('hidden');
+    if (fallbackImg) fallbackImg.classList.remove('hidden');
+  }
+
   // Mini item thumbnails right on the recommendation card
   const stripEl = document.getElementById('hasil-look1-mini-strip');
   if (stripEl) {
@@ -1144,7 +1245,7 @@ function renderOutfitDetail(outfit) {
   document.getElementById('detail-outfit-reasoning').textContent = outfit.ai_reasoning;
   document.getElementById('detail-styling-note').textContent = outfit.styling_note;
 
-  // Render Interactive Flat-Lay Moodboard Canvas
+  // Render Interactive Flat-Lay Canvas
   const moodboardGrid = document.getElementById('detail-moodboard-grid');
   if (moodboardGrid) {
     moodboardGrid.innerHTML = outfit.items
@@ -1158,11 +1259,11 @@ function renderOutfitDetail(outfit) {
               <p class="moodboard-tile-title">${escapeHtml(it.name)}</p>
             </div>
             <div class="moodboard-mini-btns">
-              <button type="button" class="moodboard-icon-btn" data-lock-item="${it.item_id}" title="Kunci / Buka Kunci">
-                ${it.is_locked ? '🔒' : '🔓'}
+              <button type="button" class="moodboard-icon-btn" data-lock-item="${it.item_id}" title="${it.is_locked ? 'Buka Kunci' : 'Kunci Item'}">
+                ${it.is_locked ? ICONS.lock : ICONS.unlock}
               </button>
-              <button type="button" class="moodboard-icon-btn" data-suggest-slot="${it.slot}" ${it.is_locked ? 'disabled' : ''} title="Putar item alternatif dari lemari">
-                ↻
+              <button type="button" class="moodboard-icon-btn" data-suggest-slot="${it.slot}" ${it.is_locked ? 'disabled' : ''} title="Ganti alternatif dari lemari">
+                ${ICONS.refresh}
               </button>
             </div>
           </div>
@@ -1188,7 +1289,7 @@ function renderOutfitDetail(outfit) {
     card.addEventListener('click', () => openItemDetailModal(card.dataset.thumbInspect));
   });
 
-  // Render numbered items list with Lock & Swap controls (FR-12)
+  // Render numbered items list with Lock & Swap controls
   const listEl = document.getElementById('detail-items-list');
   listEl.innerHTML = outfit.items
     .map((it, idx) => {
@@ -1215,18 +1316,18 @@ function renderOutfitDetail(outfit) {
               type="button"
               class="lock-btn ${it.is_locked ? 'locked' : ''}"
               data-lock-item="${it.item_id}"
-              title="Kunci item ini agar tidak berubah saat kustomisasi"
+              title="Kunci item ini agar tidak berubah saat penyesuaian"
             >
-              ${it.is_locked ? '🔒 Terkunci' : '🔓 Kunci'}
+              ${it.is_locked ? `${ICONS.lock} Terkunci` : `${ICONS.unlock} Kunci`}
             </button>
             <button
               type="button"
               class="lock-btn"
               data-suggest-slot="${it.slot}"
               ${it.is_locked ? 'disabled' : ''}
-              title="Minta saran alternatif AI untuk kategori ini"
+              title="Pilih alternatif lain dari lemari untuk kategori ini"
             >
-              ↻ Ganti AI
+              ${ICONS.refresh} Ganti
             </button>
             ${
               sameCategoryAlternatives.length > 0
@@ -1312,7 +1413,7 @@ async function runNeedNewItemAnalysis() {
   const missingCat = document.getElementById('detail-no-replacement-box').dataset.missingCategory || undefined;
 
   resultBox.classList.remove('hidden');
-  resultBox.innerHTML = `<p class="small-muted">⏳ Sedang menganalisis kekurangan outfit &amp; membuat ilustrasi Mockup AI (status: queued → processing)...</p>`;
+  resultBox.innerHTML = `<p class="small-muted">Sedang menganalisis kekurangan outfit dan menyiapkan saran item...</p>`;
 
   try {
     const createRes = await apiFetch(`/api/v1/outfits/${state.activeOutfit.outfit_id}/mockup`, {
@@ -1430,53 +1531,6 @@ function renderWardrobe(emptyMessage = null) {
   document.getElementById('lemari-subtitle').textContent =
     `${counts.all} item, banyak kemungkinan. Mulai dari pakaian yang paling sering kamu pakai.`;
 
-  // Render Interactive Wardrobe Balance Bar
-  const balanceTrack = document.getElementById('wardrobe-balance-track');
-  const readinessBadge = document.getElementById('wardrobe-readiness-badge');
-  if (readinessBadge) {
-    readinessBadge.textContent = state.wardrobe.canGenerateOutfit
-      ? '✓ Siap merangkai outfit'
-      : '⚠ Tambahkan minimal 1 Atasan & 1 Bawahan (atau 1 Terusan)';
-  }
-  if (balanceTrack) {
-    const cats = [
-      { key: 'top', label: 'Atasan' },
-      { key: 'bottom', label: 'Bawahan' },
-      { key: 'outerwear', label: 'Luaran' },
-      { key: 'footwear', label: 'Sepatu' },
-      { key: 'accessory', label: 'Aksesori' },
-      { key: 'one_piece', label: 'Terusan' }
-    ];
-    const totalAll = Math.max(1, counts.all);
-    balanceTrack.innerHTML = cats
-      .map((c) => {
-        const cnt = counts[c.key] || 0;
-        const pct = Math.min(100, Math.round((cnt / totalAll) * 100));
-        const isActive = state.wardrobe.filters.category === c.key;
-        return `
-          <button type="button" class="balance-pill ${isActive ? 'active' : ''}" data-balance-cat="${c.key}">
-            <div class="balance-pill-top">
-              <span>${c.label}</span>
-              <span>${cnt}</span>
-            </div>
-            <div class="balance-mini-bar">
-              <div class="balance-mini-fill" style="width:${cnt > 0 ? Math.max(18, pct) : 0}%"></div>
-            </div>
-          </button>
-        `;
-      })
-      .join('');
-
-    balanceTrack.querySelectorAll('[data-balance-cat]').forEach((pill) => {
-      pill.addEventListener('click', async () => {
-        const clickedCat = pill.dataset.balanceCat;
-        state.wardrobe.filters.category = state.wardrobe.filters.category === clickedCat ? 'all' : clickedCat;
-        state.wardrobe.page = 1;
-        await fetchAndRenderWardrobe();
-      });
-    });
-  }
-
   // Update category pill labels and active state
   const pillLabels = {
     all: `Semua · ${counts.all}`,
@@ -1557,9 +1611,11 @@ function bindWardrobeEvents() {
     state.wardrobe.filters = { category: 'all', color: '', formality: '', q: '', sort: 'newest' };
     state.wardrobe.page = 1;
     document.getElementById('wardrobe-search-input').value = '';
-    document.getElementById('wardrobe-color-filter').value = '';
     document.getElementById('wardrobe-formality-filter').value = '';
     document.getElementById('wardrobe-sort-select').value = 'newest';
+    document.querySelectorAll('#wardrobe-color-dots .color-dot-btn').forEach((b) => {
+      b.classList.toggle('active', b.dataset.dotColor === '');
+    });
     await fetchAndRenderWardrobe();
   });
 
@@ -1573,19 +1629,15 @@ function bindWardrobeEvents() {
     }, 180);
   });
 
-  document.getElementById('wardrobe-color-filter').addEventListener('change', async (e) => {
-    state.wardrobe.filters.color = e.target.value;
-    state.wardrobe.page = 1;
-    await fetchAndRenderWardrobe();
-  });
-
-  // Visual Color Dot Filter Bar
+  // Visual Color Dot Filter Bar (Single Consolidated Color Filter)
   document.querySelectorAll('#wardrobe-color-dots .color-dot-btn').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const color = btn.dataset.dotColor;
       state.wardrobe.filters.color = color;
       state.wardrobe.page = 1;
-      document.getElementById('wardrobe-color-filter').value = color;
+      document.querySelectorAll('#wardrobe-color-dots .color-dot-btn').forEach((b) => {
+        b.classList.toggle('active', b === btn);
+      });
       await fetchAndRenderWardrobe();
     });
   });
@@ -1653,15 +1705,7 @@ function bindWardrobeEvents() {
     }
   });
 
-  // Interactive Studio vs Original Backdrop Toggle in Upload Modal
-  document.getElementById('btn-toggle-studio-backdrop').addEventListener('click', () => {
-    const box = document.getElementById('upload-preview-img-box');
-    const badge = document.getElementById('upload-bg-status-badge');
-    const isRaw = box.classList.toggle('raw-backdrop');
-    badge.textContent = isRaw ? 'Foto Asli (Sebelum Normalisasi)' : '✓ Latar Studio Dinormalkan';
-  });
-
-  // Camera Capture (FR-04)
+  // Camera Capture
   document.getElementById('btn-camera-capture').addEventListener('click', async () => {
     const alertBox = document.getElementById('upload-alert-box');
     alertBox.classList.add('hidden');
@@ -1938,7 +1982,7 @@ async function handleSelectedClothingFiles(files) {
   alertBox.classList.add('hidden');
 
   if (files.length > 10) {
-    alertBox.textContent = 'Maksimal 10 foto yang dapat dipilih sekaligus dalam satu unggahan batch (FR-18).';
+    alertBox.textContent = 'Maksimal 10 foto yang dapat dipilih sekaligus dalam satu unggahan.';
     alertBox.classList.remove('hidden');
     return;
   }
@@ -2010,19 +2054,19 @@ function renderBatchQueueList() {
   sec.classList.remove('hidden');
   const validCount = state.batchQueue.filter((q) => q.recognized && !q.saved).length;
   document.getElementById('batch-queue-status').textContent =
-    `Antrean Tinjauan AI (${state.batchQueue.length} foto · ${validCount} siap disimpan)`;
+    `Antrean Foto Pakaian (${state.batchQueue.length} foto · ${validCount} siap disimpan)`;
 
   listEl.innerHTML = state.batchQueue
     .map((q, idx) => {
       const thumbSrc = q.recognized?.image_url || q.localPreviewUrl || '/assets/item-1.png';
       const statusBadge =
         q.saved
-          ? '✓ Tersimpan'
+          ? 'Tersimpan'
           : q.status === 'succeeded'
-          ? `✓ AI (${Math.round((q.recognized?.ai_confidence || 0.9) * 100)}%)`
+          ? `Siap (${Math.round((q.recognized?.ai_confidence || 0.9) * 100)}%)`
           : q.status === 'failed'
-          ? `✕ Gagal: ${escapeHtml(q.error || 'Format tidak didukung')}`
-          : '⏳ Memproses...';
+          ? `Gagal: ${escapeHtml(q.error || 'Format tidak didukung')}`
+          : 'Memproses...';
 
       return `
         <div class="batch-queue-row ${idx === state.activeBatchIndex ? 'active' : ''}" data-batch-idx="${idx}">
@@ -2083,12 +2127,10 @@ function selectBatchQueueItem(idx) {
     }
   });
 
-  // Update interactive studio preview stage
+  // Update upload thumbnail preview stage
   const stage = document.getElementById('upload-preview-stage');
   stage.classList.remove('hidden');
   document.getElementById('upload-active-preview-img').src = r.image_url || '/assets/item-1.png';
-  document.getElementById('upload-preview-img-box').classList.remove('raw-backdrop');
-  document.getElementById('upload-bg-status-badge').textContent = '✓ Latar Studio Dinormalkan';
 
   const conf = r.confidence_per_field || {};
   setConfidenceTag('badge-conf-cat', conf.category);
@@ -2181,11 +2223,14 @@ function renderKoleksi(showSavedToast = false) {
       const itemsText = o.items.map((i) => i.name.toLowerCase()).join(', ');
       const savedDateStr = o.saved_at ? formatIndonesianDate(o.saved_at, false) : formatIndonesianDate(new Date(), false);
       const activePlan = o.date_label || '';
+      const collageHtml =
+        renderOutfitCollageHtml(o.items, 'koleksi-collage') ||
+        `<img src="${o.preview_image_url || '/assets/look-1.png'}" alt="${escapeHtml(o.saved_name || o.title)}" class="koleksi-card-img" />`;
 
       return `
         <article class="koleksi-card">
           <div>
-            <img src="${o.preview_image_url || '/assets/look-1.png'}" alt="${escapeHtml(o.saved_name || o.title)}" class="koleksi-card-img" />
+            ${collageHtml}
           </div>
           <div>
             <div class="detail-eyebrow-row">
@@ -2315,7 +2360,7 @@ function bindKoleksiEvents() {
       const savedRes = await apiFetch('/api/v1/outfits?saved=true');
       state.savedOutfits = savedRes.items;
       renderKoleksi();
-      showFloatingToast('✓ Nama outfit berhasil diperbarui.');
+      showFloatingToast('Nama outfit berhasil diperbarui.');
     } catch (err) {
       showToastModal('Gagal Mengganti Nama', err.message);
     }
@@ -2340,7 +2385,7 @@ function bindKoleksiEvents() {
     e.preventDefault();
     const out = document.getElementById('custom-mockup-output');
     out.classList.remove('hidden');
-    out.innerHTML = `<p class="small-muted">⏳ Memeriksa moderasi konten &amp; memproses job Mockup AI...</p>`;
+    out.innerHTML = `<p class="small-muted">Memeriksa deskripsi dan menyiapkan saran serta ilustrasi item...</p>`;
 
     const missing_category = document.getElementById('custom-mockup-category').value;
     const prompt = document.getElementById('custom-mockup-prompt').value.trim();
@@ -2402,7 +2447,7 @@ function renderPreferensi() {
   const statusBadge = document.getElementById('account-email-status');
   const verifyBanner = document.getElementById('verify-email-banner');
   if (u.email_verified) {
-    statusBadge.textContent = '✓ Email Terverifikasi';
+    statusBadge.textContent = 'Email Terverifikasi';
     statusBadge.className = 'badge-verified';
     verifyBanner.classList.add('hidden');
   } else {
@@ -2413,36 +2458,41 @@ function renderPreferensi() {
 }
 
 function updateLiveStylePersonaPreview() {
+  const styleBtnMap = {};
+  document.querySelectorAll('#pref-style-pills .pill-btn').forEach((b) => {
+    styleBtnMap[b.dataset.style] = b.textContent.trim();
+  });
   const selectedStyles = Array.from(document.querySelectorAll('#pref-style-pills .pill-btn.active')).map(
     (b) => b.dataset.style
   );
   const selectedFit = document.querySelector('#pref-fit-pills .pill-btn.active')?.dataset.fit || 'Relaxed fit';
   const selectedSwatches = Array.from(document.querySelectorAll('#pref-color-swatches .swatch-item.active'));
+  const selectedMaterial = (document.getElementById('pref-material')?.value || 'Linen & katun ringan').trim();
 
   const personaMap = {
     minimalist: {
-      title: 'Natural essentials',
+      title: 'Simpel & terarah',
       desc: 'Netral, mudah dipadukan, dan nyaman untuk keseharian dengan siluet bersih.'
     },
     smart_casual: {
-      title: 'Effortless polished',
+      title: 'Rapi tanpa berlebihan',
       desc: 'Terstruktur namun tetap rileks; siap berpindah dari ruang rapat ke agenda sore.'
     },
     streetwear: {
-      title: 'Urban expressive',
-      desc: 'Karakter kasual modern dengan permainan proporsi dan lapisan yang leluasa.'
+      title: 'Kasual urban yang ekspresif',
+      desc: 'Karakter santai modern dengan permainan proporsi dan lapisan yang leluasa.'
     },
     casual: {
-      title: 'Everyday comfort',
+      title: 'Nyaman setiap hari',
       desc: 'Mengutamakan bahan adem dan gerak bebas tanpa terlihat terburu-buru.'
     },
     sporty: {
-      title: 'Active utility',
+      title: 'Aktif & ringkas',
       desc: 'Fungsional, ringan, dan dinamis untuk mobilitas tinggi sepanjang hari.'
     },
     vintage: {
-      title: 'Warm heritage',
-      desc: 'Tekstural, klasik, dan berkarakter dengan palet warna hangat yang tak lekang waktu.'
+      title: 'Klasik & hangat',
+      desc: 'Tekstural, tenang, dan berkarakter dengan palet warna hangat yang awet dipakai.'
     }
   };
 
@@ -2454,12 +2504,54 @@ function updateLiveStylePersonaPreview() {
   if (titleEl) titleEl.textContent = persona.title;
   if (descEl) descEl.textContent = `${persona.desc} (Potongan ${selectedFit.toLowerCase()}).`;
 
+  const swatchesToUse =
+    selectedSwatches.length > 0
+      ? selectedSwatches.map((s) => ({
+          color: s.dataset.color || 'Netral',
+          hex: s.dataset.hex || '#304c3c'
+        }))
+      : [
+          { color: 'Hitam', hex: '#1c1f1d' },
+          { color: 'Putih', hex: '#ffffff' },
+          { color: 'Olive', hex: '#4b5d44' },
+          { color: 'Beige', hex: '#e3dac9' }
+        ];
+
   const paletteEl = document.getElementById('persona-live-palette');
   if (paletteEl) {
-    const hexes = selectedSwatches.map((s) => s.dataset.hex || '#304c3c');
-    paletteEl.innerHTML = (hexes.length ? hexes : ['#1c1f1d', '#f4f3ee', '#304c3c', '#e8e2d5'])
-      .map((h) => `<span class="live-palette-seg" style="background:${h}"></span>`)
+    paletteEl.innerHTML = swatchesToUse
+      .map((s) => `<span class="live-palette-seg" style="background:${s.hex}"></span>`)
       .join('');
+  }
+
+  // Sync Cari Outfit -> Brief sidebar card with user's actual preferences & color palette
+  const briefTitleEl = document.getElementById('brief-persona-title');
+  if (briefTitleEl) briefTitleEl.textContent = `${persona.title}.`;
+
+  const briefPaletteEl = document.getElementById('brief-palette-preview');
+  if (briefPaletteEl) {
+    briefPaletteEl.innerHTML = swatchesToUse
+      .slice(0, 6)
+      .map(
+        (s) => `
+        <div class="brief-palette-chip">
+          <span class="brief-palette-swatch" style="background:${s.hex}"></span>
+          <span class="brief-palette-label">${escapeHtml(s.color)}</span>
+        </div>`
+      )
+      .join('');
+  }
+
+  const briefSummaryEl = document.getElementById('brief-pref-summary');
+  if (briefSummaryEl) {
+    const styleNames = selectedStyles.map((st) => styleBtnMap[st] || st).join(', ') || 'Smart casual';
+    const colorNames = swatchesToUse.map((s) => s.color).join(', ');
+    briefSummaryEl.innerHTML = `
+      <li>Gaya: ${escapeHtml(styleNames)}</li>
+      <li>Warna: ${escapeHtml(colorNames)}</li>
+      <li>Potongan: ${escapeHtml(selectedFit)}</li>
+      <li>Bahan: ${escapeHtml(selectedMaterial)}</li>
+    `;
   }
 }
 
@@ -2542,7 +2634,7 @@ function bindPreferensiEvents() {
         const meData = await apiFetch('/api/v1/users/me');
         state.user = meData.user;
         renderPreferensi();
-        showFloatingToast('✓ Email Anda berhasil diverifikasi!');
+        showFloatingToast('Email Anda berhasil diverifikasi.');
       }
     } catch (err) {
       showToastModal('Gagal Verifikasi Email', err.message);
@@ -2585,9 +2677,9 @@ function bindPreferensiEvents() {
     }
 
     openConfirmModal({
-      eyebrow: 'PERINGATAN PERMANEN (FR-17)',
+      eyebrow: 'KONFIRMASI PERMANEN',
       title: 'Hapus akun secara permanen?',
-      desc: 'Seluruh data profil, pakaian, outfit, dan hasil mockup Anda langsung dicabut aksesnya dan dihapus permanen.',
+      desc: 'Seluruh data profil, pakaian, outfit, dan saran item Anda langsung dicabut aksesnya dan dihapus permanen.',
       onConfirm: async () => {
         try {
           await apiFetch('/api/v1/users/me', {
