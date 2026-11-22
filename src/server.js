@@ -12,6 +12,7 @@ const {
   CATEGORY_LABELS,
   UPLOADS_DIR
 } = require('./db');
+const { createAiService, loadEnvFile } = require('./ai-service');
 
 const JWT_SECRET = process.env.JWT_SECRET || crypto.createHash('sha256').update(__dirname + ':weargoods-jwt-secret').digest('hex');
 const SIGNED_URL_SECRET = process.env.SIGNED_URL_SECRET || crypto.createHash('sha256').update(__dirname + ':weargoods-signed-url').digest('hex');
@@ -382,8 +383,13 @@ function sanitizeUserStylePrompt(rawPrompt) {
 // -----------------------------------------------------------------------------
 // Main Server Factory
 // -----------------------------------------------------------------------------
-function createAppServer(customDbPath) {
+function createAppServer(customDbPath, options = {}) {
   const db = initDatabase(customDbPath);
+  const isTestDb = Boolean(customDbPath && path.basename(String(customDbPath)).startsWith('test_'));
+  const aiService = createAiService({
+    forceMock: isTestDb && options.aiMode !== 'live',
+    ...(options.aiServiceOptions || {})
+  });
 
   function getUserDailyUsage(userId) {
     const todayWib = getWibDateString();
@@ -719,8 +725,15 @@ function createAppServer(customDbPath) {
 
     try {
       // =======================================================================
-      // 1. META & LOCAL DEV OUTBOX ENDPOINTS
+      // 1. META, HEALTH & LOCAL DEV OUTBOX ENDPOINTS
       // =======================================================================
+      if (method === 'GET' && pathname === '/api/v1/health') {
+        return sendJson(res, 200, {
+          status: 'ok',
+          ai: aiService.getStatus()
+        });
+      }
+
       if (method === 'GET' && pathname === '/api/v1/meta/occasions') {
         const rows = db.prepare('SELECT code, label_id, is_active FROM occasions WHERE is_active = 1').all();
         return sendJson(res, 200, { items: rows.map((r) => ({ ...r, is_active: Boolean(r.is_active) })) });
@@ -1312,8 +1325,27 @@ function createAppServer(customDbPath) {
           const storedPath = path.join(UPLOADS_DIR, storedFileId);
           fs.writeFileSync(storedPath, cleanBuffer);
 
-          const aiResult = runAiClothingRecognition(filename, hintText);
           const isRealPhotoUpload = cleanBuffer.length > 2048;
+          const isSimulatedTimeout = `${filename} ${hintText}`.toLowerCase().includes('timeout');
+          let aiResult = null;
+          if (aiService.isLiveEnabled() && isRealPhotoUpload && !isSimulatedTimeout) {
+            try {
+              aiResult = await aiService.recognizeClothing({
+                imageBuffer: cleanBuffer,
+                mimeType,
+                filename,
+                hintText
+              });
+            } catch (geminiErr) {
+              if (geminiErr.status === 422 || !aiService.fallbackOnError) {
+                throw geminiErr;
+              }
+              console.warn(`[WearGoods AI] Recognize fallback ke simulasi lokal (${geminiErr.code || geminiErr.message})`);
+            }
+          }
+          if (!aiResult) {
+            aiResult = runAiClothingRecognition(filename, hintText);
+          }
           const rawImageUrl = isRealPhotoUpload ? `/uploads/${storedFileId}` : aiResult.default_asset_url;
 
           return sendJson(res, 200, {
@@ -1877,15 +1909,52 @@ function createAppServer(customDbPath) {
           sporty: 'Aktif dan leluasa bergerak.',
           vintage: 'Sentuhan klasik yang hangat.'
         };
-        const title = titlesByStyle[styleCode] || 'Natural, tetap profesional.';
-        const reasoning = buildOutfitReasoning({
+        let title = titlesByStyle[styleCode] || 'Natural, tetap profesional.';
+        let reasoning = buildOutfitReasoning({
           items: selectedItems,
           occasionLabel: occasionRow.label_id,
           styleCode,
           styleLabel: styleRow.label_id,
           weatherContext
         });
-        const stylingNote = buildStylingNote(styleCode);
+        let stylingNote = buildStylingNote(styleCode);
+
+        if (aiService.isLiveEnabled()) {
+          try {
+            const aiOutfit = await aiService.generateOutfit({
+              activeItems,
+              occasionLabel: occasionRow.label_id,
+              styleCode,
+              styleLabel: styleRow.label_id,
+              weatherContext,
+              locationContext,
+              userPrompt,
+              userPreferences: formatUserProfile(user),
+              recentSignatures: Array.from(recentSignatures),
+              mode: 'generate'
+            });
+            if (aiOutfit && aiOutfit.selectedItems?.length) {
+              const aiSig = aiOutfit.selectedItems.map((x) => x.item_id).sort().join('|');
+              if (!recentSignatures.has(aiSig) || candidates.length <= 1) {
+                selectedItems = aiOutfit.selectedItems;
+              }
+              title = aiOutfit.title || title;
+              reasoning = aiOutfit.reasoning || reasoning;
+              stylingNote = aiOutfit.stylingNote || stylingNote;
+            }
+          } catch (geminiErr) {
+            if (!aiService.fallbackOnError) {
+              refundAiQuota(user.user_id, 'outfit');
+              return sendError(
+                res,
+                geminiErr.status || 502,
+                geminiErr.code || 'AI_OUTFIT_FAILED',
+                geminiErr.message || 'Gagal merangkai outfit dengan AI.'
+              );
+            }
+            console.warn(`[WearGoods AI] Generate outfit fallback ke heuristik lokal (${geminiErr.code || geminiErr.message})`);
+          }
+        }
 
         const now = new Date().toISOString();
         const outfitId = crypto.randomUUID();
@@ -2104,7 +2173,9 @@ function createAppServer(customDbPath) {
         const lockedNames = effectiveItems.filter((x) => x.is_locked).map((x) => x.name).filter(Boolean);
         const now = new Date().toISOString();
         const newOutfitId = crypto.randomUUID();
-        const newReasoning = buildOutfitReasoning({
+        let newTitle = baseOutfit.title;
+        let newStylingNote = baseOutfit.styling_note;
+        let newReasoning = buildOutfitReasoning({
           items: effectiveItems,
           occasionLabel: occasionRow?.label_id || baseOutfit.occasion_code,
           styleCode: baseOutfit.style_code,
@@ -2112,6 +2183,65 @@ function createAppServer(customDbPath) {
           weatherContext: baseOutfit.weather_context,
           lockedNames
         });
+
+        if (action !== 'lock' && action !== 'replace_manual' && aiService.isLiveEnabled()) {
+          try {
+            const activeItems = db.prepare(`
+              SELECT * FROM wardrobe_items
+              WHERE user_id = ? AND deleted_at IS NULL
+              ORDER BY created_at DESC
+            `).all(user.user_id).map(formatWardrobeItem);
+
+            const lockedIds = effectiveItems.filter((x) => x.is_locked).map((x) => x.item_id);
+            const lockedSet = new Set(lockedIds);
+            const prevSignature = currentOutfitItems.map((x) => x.item_id).sort().join('|');
+
+            const aiCustom = await aiService.generateOutfit({
+              activeItems,
+              occasionLabel: occasionRow?.label_id || baseOutfit.occasion_code,
+              styleCode: baseOutfit.style_code,
+              styleLabel: styleRow?.label_id || baseOutfit.style_code,
+              weatherContext: baseOutfit.weather_context,
+              locationContext: baseOutfit.location_context,
+              userPrompt: customPrompt,
+              userPreferences: formatUserProfile(user),
+              recentSignatures: [prevSignature],
+              lockedItemIds: lockedIds,
+              targetCategory,
+              mode: 'customize'
+            });
+
+            if (aiCustom && aiCustom.selectedItems?.length) {
+              const aiSig = aiCustom.selectedItems.map((x) => x.item_id).sort().join('|');
+              const unlockedChanged = aiSig !== prevSignature;
+              if (unlockedChanged) {
+                effectiveItems.length = 0;
+                for (const item of aiCustom.selectedItems) {
+                  effectiveItems.push({
+                    item_id: item.item_id,
+                    slot: item.category,
+                    is_locked: lockedSet.has(item.item_id),
+                    name: item.name || item.sub_category
+                  });
+                }
+              }
+              newTitle = aiCustom.title || newTitle;
+              newReasoning = aiCustom.reasoning || newReasoning;
+              newStylingNote = aiCustom.stylingNote || newStylingNote;
+            }
+          } catch (geminiErr) {
+            if (!aiService.fallbackOnError) {
+              refundAiQuota(user.user_id, 'outfit');
+              return sendError(
+                res,
+                geminiErr.status || 502,
+                geminiErr.code || 'AI_CUSTOMIZE_FAILED',
+                geminiErr.message || 'Gagal menyesuaikan outfit dengan AI.'
+              );
+            }
+            console.warn(`[WearGoods AI] Customize outfit fallback ke aturan lokal (${geminiErr.code || geminiErr.message})`);
+          }
+        }
 
         db.prepare(`
           INSERT INTO outfits (
@@ -2123,12 +2253,12 @@ function createAppServer(customDbPath) {
         `).run(
           newOutfitId,
           user.user_id,
-          baseOutfit.title,
+          newTitle,
           baseOutfit.occasion_code,
           baseOutfit.style_code,
           customPrompt,
           newReasoning,
-          baseOutfit.styling_note,
+          newStylingNote,
           baseOutfit.weather_context,
           baseOutfit.location_context,
           baseOutfit.date_label,
@@ -2322,7 +2452,45 @@ function createAppServer(customDbPath) {
 
         const mockupId = crypto.randomUUID();
         const now = new Date().toISOString();
-        const mockupImageUrl = `/assets/mockup-${missingCategory}.svg`;
+
+        if (aiService.isLiveEnabled()) {
+          try {
+            const aiGap = await aiService.analyzeItemGap({
+              outfit: formatted,
+              missingCategory: body.missing_category || missingCategory,
+              userPreferences: formatUserProfile(user)
+            });
+            if (aiGap) {
+              missingCategory = aiGap.missingCategory || missingCategory;
+              gapAnalysis = aiGap.gapAnalysis || gapAnalysis;
+              generatedPrompt = aiGap.generatedPrompt || generatedPrompt;
+              searchKeywords = aiGap.searchKeywords || searchKeywords;
+            }
+          } catch (geminiErr) {
+            if (!aiService.fallbackOnError) {
+              refundAiQuota(user.user_id, 'mockup');
+              return sendError(
+                res,
+                geminiErr.status || 502,
+                geminiErr.code || 'AI_MOCKUP_FAILED',
+                geminiErr.message || 'Terjadi kegagalan layanan AI saat menganalisis pelengkap. Kuota Anda telah dikembalikan.'
+              );
+            }
+            console.warn(`[WearGoods AI] Gap analysis fallback ke template lokal (${geminiErr.code || geminiErr.message})`);
+          }
+        }
+
+        let mockupImageUrl = `/assets/mockup-${missingCategory}.svg`;
+        if (aiService.isLiveEnabled()) {
+          const aiImgUrl = await aiService.generateMockupImage({
+            prompt: generatedPrompt,
+            mockupId,
+            uploadsDir: UPLOADS_DIR
+          });
+          if (aiImgUrl) {
+            mockupImageUrl = aiImgUrl;
+          }
+        }
 
         db.prepare(`
           INSERT INTO mockup_requests (
@@ -2418,8 +2586,10 @@ function createAppServer(customDbPath) {
         const catLabel = CATEGORY_LABELS[validCat];
         const mockupId = crypto.randomUUID();
         const now = new Date().toISOString();
-        const mockupImageUrl = `/assets/mockup-${validCat}.svg`;
-        const searchKeywords = {
+        let mockupImageUrl = `/assets/mockup-${validCat}.svg`;
+        let gapAnalysis = `Permintaan kustom untuk kategori ${catLabel}: "${customPrompt}".`;
+        let generatedPrompt = customPrompt;
+        let searchKeywords = {
           id: [
             `${catLabel.toLowerCase()} ${customPrompt.split(/\s+/).slice(0, 3).join(' ').toLowerCase()}`,
             `${catLabel.toLowerCase()} minimalis smart casual`,
@@ -2432,6 +2602,41 @@ function createAppServer(customDbPath) {
           ]
         };
 
+        if (aiService.isLiveEnabled()) {
+          try {
+            const aiGap = await aiService.analyzeItemGap({
+              customPrompt,
+              missingCategory: validCat,
+              userPreferences: formatUserProfile(user)
+            });
+            if (aiGap) {
+              gapAnalysis = aiGap.gapAnalysis || gapAnalysis;
+              generatedPrompt = aiGap.generatedPrompt || generatedPrompt;
+              searchKeywords = aiGap.searchKeywords || searchKeywords;
+            }
+          } catch (geminiErr) {
+            if (!aiService.fallbackOnError) {
+              refundAiQuota(user.user_id, 'mockup');
+              return sendError(
+                res,
+                geminiErr.status || 502,
+                geminiErr.code || 'AI_MOCKUP_FAILED',
+                'Gagal memproses saran item dengan AI. Kuota Anda telah dikembalikan.'
+              );
+            }
+            console.warn(`[WearGoods AI] Custom mockup gap fallback ke aturan lokal (${geminiErr.code || geminiErr.message})`);
+          }
+
+          const aiImgUrl = await aiService.generateMockupImage({
+            prompt: generatedPrompt,
+            mockupId,
+            uploadsDir: UPLOADS_DIR
+          });
+          if (aiImgUrl) {
+            mockupImageUrl = aiImgUrl;
+          }
+        }
+
         db.prepare(`
           INSERT INTO mockup_requests (
             mockup_id, user_id, outfit_id, source, missing_category,
@@ -2442,8 +2647,8 @@ function createAppServer(customDbPath) {
           mockupId,
           user.user_id,
           validCat,
-          customPrompt,
-          `Permintaan kustom untuk kategori ${catLabel}: "${customPrompt}".`,
+          generatedPrompt,
+          gapAnalysis,
           mockupImageUrl,
           JSON.stringify(searchKeywords),
           now,
@@ -2556,14 +2761,23 @@ function createAppServer(customDbPath) {
     }
   });
 
-  return { server, db };
+  return { server, db, aiService };
 }
 
 if (require.main === module) {
+  loadEnvFile();
   const PORT = Number(process.env.PORT || 3000);
-  const { server } = createAppServer();
+  const { server, aiService } = createAppServer();
+  const aiStatus = aiService.getStatus();
   server.listen(PORT, () => {
-    console.log(`WearGoods (Laras) MVP Server berjalan di http://localhost:${PORT}`);
+    console.log(`WearGoods MVP Server berjalan di http://localhost:${PORT}`);
+    console.log(
+      aiStatus.mode === 'gemini'
+        ? aiStatus.image_generation_enabled
+          ? `Mode AI: Gemini Live (${aiStatus.model} + ${aiStatus.image_model})`
+          : `Mode AI: Gemini Live (${aiStatus.model} · ilustrasi SVG bawaan)`
+        : 'Mode AI: Simulasi Lokal (isi GEMINI_API_KEY di .env untuk mengaktifkan Gemini API)'
+    );
   });
 }
 

@@ -6,9 +6,13 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node src/server.js",
-    "test": "node tests/run-tests.js"
+    "test": "node tests/run-tests.js",
+    "test:ai": "node tests/test-ai-service.js"
   },
   "engines": {
     "node": ">=22.5.0"
+  },
+  "dependencies": {
+    "@google/genai": "^3.6.1"
   }
 }
