@@ -129,6 +129,14 @@ button, input, select, textarea {
   color: var(--brand-green);
 }
 
+.eyebrow-red {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent-rust, #c2593f);
+}
+
 .serif-heading-xl {
   font-family: var(--font-serif);
   font-size: 38px;
@@ -511,7 +519,7 @@ button, input, select, textarea {
   cursor: pointer;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
   transition: transform 0.18s ease, background-color 0.18s ease;
-  z-index: 5;
+  z-index: 12;
 }
 
 .hotspot-pin:hover, .hotspot-pin.active {

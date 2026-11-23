@@ -51,7 +51,7 @@ const CATEGORY_NAMES = {
   top: 'ATASAN',
   bottom: 'BAWAHAN',
   outerwear: 'LUARAN',
-  footwear: 'SEPATU',
+  footwear: 'ALAS KAKI / SEPATU',
   accessory: 'AKSESORI',
   one_piece: 'TERUSAN'
 };
@@ -179,11 +179,11 @@ function populateDynamicDates() {
   const briefDateSelect = document.getElementById('brief-date');
   if (briefDateSelect) {
     briefDateSelect.innerHTML = `
-      <option value="${escapeHtml(todayStr)}">Hari ini · ${escapeHtml(todayStr)}</option>
-      <option value="${escapeHtml(tomorrowStr)}" selected>Besok · ${escapeHtml(tomorrowStr)}</option>
+      <option value="${escapeHtml(todayStr)}" selected>Hari ini · ${escapeHtml(todayStr)}</option>
+      <option value="${escapeHtml(tomorrowStr)}">Besok · ${escapeHtml(tomorrowStr)}</option>
       <option value="${escapeHtml(nextWeekStr)}">${escapeHtml(nextWeekStr)}</option>
     `;
-    state.brief.date_label = tomorrowStr;
+    state.brief.date_label = todayStr;
   }
 }
 
@@ -234,8 +234,10 @@ function setAuthTokens(accessToken) {
   if (accessToken) {
     sessionStorage.setItem('weargoods_access_token', accessToken);
     sessionStorage.removeItem('weargoods_logged_out');
+    localStorage.setItem('weargoods_has_session', 'true');
   } else {
     sessionStorage.removeItem('weargoods_access_token');
+    localStorage.removeItem('weargoods_has_session');
   }
 }
 
@@ -287,7 +289,9 @@ async function initApp() {
   bindModalCloseEvents();
 
   const explicitlyLoggedOut = sessionStorage.getItem('weargoods_logged_out') === 'true';
-  if (window.location.hash === '#masuk' || explicitlyLoggedOut) {
+  const hasSessionHint = localStorage.getItem('weargoods_has_session') === 'true';
+
+  if (window.location.hash === '#masuk' || explicitlyLoggedOut || (!state.token && !hasSessionHint)) {
     showAuthView('login');
     return;
   }
@@ -775,7 +779,12 @@ function bindBerandaEvents() {
     pinsEl.querySelectorAll('[data-pin-idx]').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
+        const wasActive = btn.classList.contains('active');
         pinsEl.querySelectorAll('[data-pin-idx]').forEach((p) => p.classList.remove('active'));
+        if (wasActive) {
+          if (floatingCard) floatingCard.classList.add('hidden');
+          return;
+        }
         btn.classList.add('active');
         const pin = pins[Number(btn.dataset.pinIdx)];
         if (!pin || !floatingCard) return;
@@ -1537,7 +1546,7 @@ function renderWardrobe(emptyMessage = null) {
     top: `Atasan · ${counts.top}`,
     bottom: `Bawahan · ${counts.bottom}`,
     outerwear: `Luaran · ${counts.outerwear}`,
-    footwear: `Sepatu · ${counts.footwear}`,
+    footwear: `Alas Kaki / Sepatu · ${counts.footwear}`,
     accessory: `Aksesori · ${counts.accessory}`,
     one_piece: `Terusan · ${counts.one_piece}`
   };
@@ -2716,7 +2725,14 @@ function closeModal(id) {
   document.getElementById(id)?.classList.add('hidden');
 }
 
-function showToastModal(title, desc) {
+function showToastModal(title, desc, eyebrow = null, isError = null) {
+  const isErr = isError !== null ? isError : (String(title).toLowerCase().startsWith('gagal') || String(title).toLowerCase().includes('error'));
+  const eyebrowText = eyebrow || (isErr ? 'PERINGATAN' : 'BERHASIL');
+  const eyebrowEl = document.getElementById('toast-modal-eyebrow');
+  if (eyebrowEl) {
+    eyebrowEl.textContent = eyebrowText;
+    eyebrowEl.className = isErr ? 'eyebrow-red' : 'eyebrow-green';
+  }
   document.getElementById('toast-modal-title').textContent = title;
   document.getElementById('toast-modal-desc').textContent = desc;
   openModal('modal-success-toast');

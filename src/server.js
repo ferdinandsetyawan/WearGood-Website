@@ -668,6 +668,22 @@ function createAppServer(customDbPath, options = {}) {
     return out;
   }
 
+  function isRequestSecure(req) {
+    return (
+      req.headers['x-forwarded-proto'] === 'https' ||
+      Boolean(req.socket?.encrypted) ||
+      process.env.NODE_ENV === 'production'
+    );
+  }
+
+  function serializeCookie(name, val, { maxAge, path = '/', httpOnly = true, sameSite = 'Lax', secure = false } = {}) {
+    let cookie = `${name}=${encodeURIComponent(val)}; Path=${path}; SameSite=${sameSite}`;
+    if (httpOnly) cookie += '; HttpOnly';
+    if (typeof maxAge === 'number') cookie += `; Max-Age=${maxAge}`;
+    if (secure) cookie += '; Secure';
+    return cookie;
+  }
+
   function authenticate(req) {
     const authHeader = req.headers.authorization || '';
     if (!authHeader.startsWith('Bearer ')) return null;
@@ -715,11 +731,13 @@ function createAppServer(customDbPath, options = {}) {
   // HTTP Server Handler
   // ---------------------------------------------------------------------------
   const requestHandler = async (req, res) => {
-    const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+    const isHttps = isRequestSecure(req);
+    const defaultProto = isHttps ? 'https' : 'http';
+    const parsedUrl = new URL(req.url, `${defaultProto}://${req.headers.host || 'localhost'}`);
     const pathname = parsedUrl.pathname;
     const method = req.method.toUpperCase();
 
-    const origin = req.headers.origin || `http://${req.headers.host || 'localhost:3000'}`;
+    const origin = req.headers.origin || `${defaultProto}://${req.headers.host || 'localhost:3000'}`;
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -852,7 +870,10 @@ function createAppServer(customDbPath, options = {}) {
             user: formatUserProfile(user)
           },
           {
-            'Set-Cookie': `refresh_token=${encodeURIComponent(refreshRawToken)}; HttpOnly; Path=/; Max-Age=${7 * 24 * 3600}; SameSite=Lax`
+            'Set-Cookie': serializeCookie('refresh_token', refreshRawToken, {
+              maxAge: 7 * 24 * 3600,
+              secure: isHttps
+            })
           }
         );
       }
@@ -922,9 +943,10 @@ function createAppServer(customDbPath, options = {}) {
           VALUES (?, ?, 'refresh', ?, ?, ?)
         `).run(crypto.randomUUID(), user.user_id, hashToken(refreshRawToken), refreshExpires, new Date().toISOString());
 
-        const cookieHeader = rememberMe
-          ? `refresh_token=${encodeURIComponent(refreshRawToken)}; HttpOnly; Path=/; Max-Age=${7 * 24 * 3600}; SameSite=Lax`
-          : `refresh_token=${encodeURIComponent(refreshRawToken)}; HttpOnly; Path=/; SameSite=Lax`;
+        const cookieHeader = serializeCookie('refresh_token', refreshRawToken, {
+          maxAge: rememberMe ? 7 * 24 * 3600 : undefined,
+          secure: isHttps
+        });
 
         return sendJson(
           res,
@@ -983,7 +1005,10 @@ function createAppServer(customDbPath, options = {}) {
             user: formatUserProfile(user)
           },
           {
-            'Set-Cookie': `refresh_token=${encodeURIComponent(newRefreshRaw)}; HttpOnly; Path=/; Max-Age=${7 * 24 * 3600}; SameSite=Lax`
+            'Set-Cookie': serializeCookie('refresh_token', newRefreshRaw, {
+              maxAge: 7 * 24 * 3600,
+              secure: isHttps
+            })
           }
         );
       }
@@ -1013,7 +1038,12 @@ function createAppServer(customDbPath, options = {}) {
           res,
           200,
           { message: 'Berhasil keluar dan sesi telah dicabut.' },
-          { 'Set-Cookie': 'refresh_token=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax' }
+          {
+            'Set-Cookie': serializeCookie('refresh_token', '', {
+              maxAge: 0,
+              secure: isHttps
+            })
+          }
         );
       }
 
@@ -1251,7 +1281,12 @@ function createAppServer(customDbPath, options = {}) {
           {
             message: 'Akun Anda telah dihapus dan seluruh sesi aktif dicabut. Data akan dibersihkan permanen paling lambat 30 hari.'
           },
-          { 'Set-Cookie': 'refresh_token=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax' }
+          {
+            'Set-Cookie': serializeCookie('refresh_token', '', {
+              maxAge: 0,
+              secure: isHttps
+            })
+          }
         );
       }
 

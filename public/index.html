@@ -39,7 +39,7 @@
       <p class="auth-hero-caption" id="auth-lookbook-caption">Pakai yang kamu punya. Temukan kemungkinan baru.</p>
     </aside>
 
-    <main class="auth-panel">
+    <div class="auth-panel" role="region" aria-label="Panel Autentikasi">
       <!-- Sub-panel A: Login (Masuk.png) -->
       <div id="auth-login-box" class="auth-form-container">
         <p class="eyebrow">RUANG UNTUK GAYA PERSONALMU</p>
@@ -213,7 +213,7 @@
         <div class="divider-line"></div>
         <button type="button" class="btn btn-outline btn-block" id="btn-forgot-back">Kembali ke halaman Masuk</button>
       </div>
-    </main>
+    </div>
   </div>
 
   <!-- ===================================================================== -->
@@ -252,7 +252,7 @@
     </aside>
 
     <!-- Main Content Area -->
-    <div class="main-wrapper">
+    <main id="main-content" class="main-wrapper">
       <!-- Top Header -->
       <header class="topbar">
         <div class="topbar-left">
@@ -289,7 +289,7 @@
       <!-- ================================================================= -->
       <!-- PAGE 1: BERANDA (Beranda.png + Live Editorial Animations)         -->
       <!-- ================================================================= -->
-      <main id="page-beranda" class="page-content page-fade">
+      <section id="page-beranda" class="page-content page-fade" aria-label="Beranda">
         <div class="page-header-row">
           <div>
             <p class="eyebrow">GAYA SEHARI-HARI, VERSI DIRIMU</p>
@@ -418,12 +418,12 @@
             <span class="notes-text" id="beranda-laras-note">Gaya yang baik dimulai dari mengenal apa yang sudah kamu punya.</span>
           </div>
         </section>
-      </main>
+      </section>
 
       <!-- ================================================================= -->
       <!-- PAGE 2: CARI OUTFIT / REKOMENDASI (Brief, Memuat, Hasil, Detail)  -->
       <!-- ================================================================= -->
-      <main id="page-cari-outfit" class="page-content page-fade hidden">
+      <section id="page-cari-outfit" class="page-content page-fade hidden" aria-label="Cari outfit">
         <!-- Sub-view 2A: Brief Form (Rekomendasi · Brief.png) -->
         <div id="rekomendasi-brief-view">
           <div class="page-header-row">
@@ -762,12 +762,12 @@
             </div>
           </div>
         </div>
-      </main>
+      </section>
 
       <!-- ================================================================= -->
       <!-- PAGE 3: LEMARI SAYA / DIGITAL WARDROBE (Lemari saya.png)          -->
       <!-- ================================================================= -->
-      <main id="page-lemari" class="page-content page-fade hidden">
+      <section id="page-lemari" class="page-content page-fade hidden" aria-label="Lemari saya">
         <div class="page-header-row">
           <div>
             <p class="eyebrow">LEMARI DIGITAL</p>
@@ -851,7 +851,7 @@
           <button type="button" class="pill-btn" data-category="top">Atasan · 1</button>
           <button type="button" class="pill-btn" data-category="bottom">Bawahan · 1</button>
           <button type="button" class="pill-btn" data-category="outerwear">Luaran · 0</button>
-          <button type="button" class="pill-btn" data-category="footwear">Sepatu · 1</button>
+          <button type="button" class="pill-btn" data-category="footwear">Alas Kaki / Sepatu · 1</button>
           <button type="button" class="pill-btn" data-category="accessory">Aksesori · 1</button>
           <button type="button" class="pill-btn" data-category="one_piece">Terusan · 0</button>
         </div>
@@ -895,12 +895,12 @@
         <p class="legal-footnote mt-24">
           Foto pakaian hanya digunakan untuk lemari personalmu. Metadata lokasi (EXIF/GPS) dihapus otomatis dan kamu dapat menghapusnya kapan saja.
         </p>
-      </main>
+      </section>
 
       <!-- ================================================================= -->
       <!-- PAGE 4: KOLEKSI / SAVED OUTFITS (Koleksi tersimpan.png & Kosong)  -->
       <!-- ================================================================= -->
-      <main id="page-koleksi" class="page-content page-fade hidden">
+      <section id="page-koleksi" class="page-content page-fade hidden" aria-label="Koleksi outfit">
         <div id="koleksi-saved-toast" class="sage-toast-banner mb-20 hidden">
           <span>Outfit berhasil disimpan ke Koleksi saya.</span>
         </div>
@@ -944,12 +944,12 @@
           </p>
           <button type="button" class="btn btn-primary btn-block mt-20" data-nav="cari-outfit">Temukan outfit pertama</button>
         </div>
-      </main>
+      </section>
 
       <!-- ================================================================= -->
       <!-- PAGE 5: PREFERENSI GAYA & AKUN (Preferensi gaya.png + FR-03..20)  -->
       <!-- ================================================================= -->
-      <main id="page-preferensi" class="page-content page-fade hidden">
+      <section id="page-preferensi" class="page-content page-fade hidden" aria-label="Preferensi gaya">
         <div class="page-header-row">
           <div>
             <p class="eyebrow">PROFIL GAYA</p>
@@ -1077,7 +1077,7 @@
                   Tindakan ini permanen. Seluruh profil, foto pakaian, outfit, dan saran item langsung dicabut aksesnya dan dihapus permanen dari penyimpanan paling lambat 30 hari.
                 </p>
                 <div class="form-row-2 mt-12">
-                  <input type="password" id="delete-acc-password" class="form-input" placeholder="Konfirmasi kata sandi untuk hapus akun" />
+                  <input type="password" id="delete-acc-password" class="form-input" placeholder="Masukkan kata sandi" />
                   <button type="button" class="btn btn-danger" id="btn-delete-account">Hapus Akun Saya</button>
                 </div>
                 <div id="delete-acc-error" class="alert-box alert-error mt-8 hidden"></div>
@@ -1135,8 +1135,8 @@
             </div>
           </aside>
         </div>
-      </main>
-    </div>
+      </section>
+    </main>
 
     <!-- Mobile Fixed Bottom Navigation (Beranda · Mobile.png) -->
     <nav class="mobile-bottom-nav" aria-label="Navigasi Bawah Mobile">
@@ -1332,7 +1332,7 @@
               <option value="top">Atasan</option>
               <option value="bottom">Bawahan</option>
               <option value="outerwear">Luaran</option>
-              <option value="footwear">Alas Kaki</option>
+              <option value="footwear">Alas Kaki / Sepatu</option>
               <option value="accessory">Aksesori</option>
               <option value="one_piece">Terusan</option>
             </select>
@@ -1523,7 +1523,7 @@
   <!-- Modal 9: Toast / Success Confirmation (Feedback diterima.png & Preferensi tersimpan.png) -->
   <div id="modal-success-toast" class="modal-overlay hidden" role="dialog" aria-modal="true">
     <div class="modal-card modal-sm">
-      <p class="eyebrow-green">BERHASIL</p>
+      <p class="eyebrow-green" id="toast-modal-eyebrow">BERHASIL</p>
       <h2 class="serif-heading-lg mt-8" id="toast-modal-title">Preferensi diperbarui.</h2>
       <p class="body-muted mt-8" id="toast-modal-desc">
         Pilihan berikutnya akan mempertimbangkan gaya dan kenyamananmu.
