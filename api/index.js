@@ -1,6 +1,5 @@
 const path = require('node:path');
 const fs = require('node:fs');
-const { createAppServer } = require('../src/server');
 
 let cachedHandler = null;
 
@@ -41,12 +40,27 @@ function getHandler() {
     dbPath = tmpDb;
   }
 
+  // Lazy-load server logic agar aman dari crash saat inisialisasi modul
+  const { createAppServer } = require('../src/server');
   const { handler, server } = createAppServer(dbPath);
   cachedHandler = handler || ((req, res) => server.emit('request', req, res));
   return cachedHandler;
 }
 
 module.exports = async (req, res) => {
-  const handler = getHandler();
-  return handler(req, res);
+  try {
+    const handler = getHandler();
+    return await handler(req, res);
+  } catch (err) {
+    console.error('[Vercel Handler Error]:', err);
+    res.statusCode = 500;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({
+      status: 'error',
+      code: 'SERVERLESS_FUNCTION_ERROR',
+      message: err.message,
+      nodeVersion: process.version,
+      stack: err.stack
+    }, null, 2));
+  }
 };
