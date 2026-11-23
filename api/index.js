@@ -21,11 +21,15 @@ function getHandler() {
 
     process.env.UPLOADS_DIR = tmpUploadsDir;
 
-    const originalDb = path.join(process.cwd(), 'database', 'weargoods.sqlite');
     const tmpDb = path.join(tmpDir, 'weargoods.sqlite');
+    const candidateOriginals = [
+      path.join(__dirname, '..', 'database', 'weargoods.sqlite'),
+      path.join(process.cwd(), 'database', 'weargoods.sqlite')
+    ];
+    const originalDb = candidateOriginals.find((p) => fs.existsSync(p));
 
     // Salin basis data awal ke /tmp saat cold-start jika belum ada
-    if (!fs.existsSync(tmpDb) && fs.existsSync(originalDb)) {
+    if (!fs.existsSync(tmpDb) && originalDb) {
       try {
         fs.copyFileSync(originalDb, tmpDb);
       } catch (err) {
@@ -33,9 +37,8 @@ function getHandler() {
       }
     }
 
-    if (fs.existsSync(tmpDb)) {
-      dbPath = tmpDb;
-    }
+    // Selalu gunakan jalur /tmp pada serverless agar aman ditulis
+    dbPath = tmpDb;
   }
 
   const { handler, server } = createAppServer(dbPath);
