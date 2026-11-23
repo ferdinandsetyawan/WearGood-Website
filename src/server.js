@@ -572,6 +572,11 @@ function createAppServer(customDbPath, options = {}) {
   }
 
   function readBodyBuffer(req, maxBytes = 25 * 1024 * 1024) {
+    if (req.body !== undefined && req.body !== null) {
+      if (Buffer.isBuffer(req.body)) return Promise.resolve(req.body);
+      if (typeof req.body === 'string') return Promise.resolve(Buffer.from(req.body));
+      if (typeof req.body === 'object') return Promise.resolve(Buffer.from(JSON.stringify(req.body)));
+    }
     return new Promise((resolve, reject) => {
       const chunks = [];
       let total = 0;
@@ -592,6 +597,9 @@ function createAppServer(customDbPath, options = {}) {
   }
 
   async function parseJsonBody(req) {
+    if (req.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body)) {
+      return req.body;
+    }
     const buf = await readBodyBuffer(req);
     if (!buf.length) return {};
     try {
@@ -706,7 +714,7 @@ function createAppServer(customDbPath, options = {}) {
   // ---------------------------------------------------------------------------
   // HTTP Server Handler
   // ---------------------------------------------------------------------------
-  const server = http.createServer(async (req, res) => {
+  const requestHandler = async (req, res) => {
     const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
     const pathname = parsedUrl.pathname;
     const method = req.method.toUpperCase();
@@ -1724,7 +1732,11 @@ function createAppServer(customDbPath, options = {}) {
             db.prepare('DELETE FROM wardrobe_items WHERE item_id = ?').run(itemId);
 
             if (row.original_image_url && row.original_image_url.startsWith('/uploads/')) {
-              const fileOnDisk = path.join(UPLOADS_DIR, path.basename(row.original_image_url));
+              let fileOnDisk = path.join(UPLOADS_DIR, path.basename(row.original_image_url));
+              if (!fs.existsSync(fileOnDisk)) {
+                const fallbackDisk = path.join(__dirname, '..', 'database', 'uploads', path.basename(row.original_image_url));
+                if (fs.existsSync(fallbackDisk)) fileOnDisk = fallbackDisk;
+              }
               if (fs.existsSync(fileOnDisk)) {
                 try { fs.unlinkSync(fileOnDisk); } catch {}
               }
@@ -2711,9 +2723,14 @@ function createAppServer(customDbPath, options = {}) {
           return sendError(res, 403, 'EXPIRED_OR_INVALID_SIGNED_URL', 'Signed URL gambar sudah kedaluwarsa atau tidak valid.');
         }
         const safeName = path.basename(pathname);
-        const filePath = path.join(UPLOADS_DIR, safeName);
+        let filePath = path.join(UPLOADS_DIR, safeName);
         if (!fs.existsSync(filePath)) {
-          return sendError(res, 404, 'FILE_NOT_FOUND', 'File gambar tidak ditemukan.');
+          const fallbackPath = path.join(__dirname, '..', 'database', 'uploads', safeName);
+          if (fs.existsSync(fallbackPath)) {
+            filePath = fallbackPath;
+          } else {
+            return sendError(res, 404, 'FILE_NOT_FOUND', 'File gambar tidak ditemukan.');
+          }
         }
         const ext = path.extname(safeName).toLowerCase();
         const mime = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
@@ -2759,9 +2776,11 @@ function createAppServer(customDbPath, options = {}) {
       const status = err.status || 500;
       return sendError(res, status, err.code || 'INTERNAL_ERROR', err.message || 'Terjadi kesalahan pada server.');
     }
-  });
+  };
 
-  return { server, db, aiService };
+  const server = http.createServer(requestHandler);
+
+  return { server, handler: requestHandler, db, aiService };
 }
 
 if (require.main === module) {

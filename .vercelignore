@@ -1,0 +1,9 @@
+.git
+.env
+.env.local
+tests
+scripts
+*.pdf
+database/*.sqlite-shm
+database/*.sqlite-wal
+database/test_*.sqlite*

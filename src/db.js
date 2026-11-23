@@ -3,13 +3,13 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const DB_DIR = path.join(__dirname, '..', 'database');
-const ASSETS_DIR = path.join(__dirname, '..', 'public', 'assets');
-const UPLOADS_DIR = path.join(__dirname, '..', 'database', 'uploads');
+const DB_DIR = process.env.DB_DIR || path.join(__dirname, '..', 'database');
+const ASSETS_DIR = process.env.ASSETS_DIR || path.join(__dirname, '..', 'public', 'assets');
+const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '..', 'database', 'uploads');
 
-fs.mkdirSync(DB_DIR, { recursive: true });
-fs.mkdirSync(ASSETS_DIR, { recursive: true });
-fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+try { fs.mkdirSync(DB_DIR, { recursive: true }); } catch (_) {}
+try { fs.mkdirSync(ASSETS_DIR, { recursive: true }); } catch (_) {}
+try { fs.mkdirSync(UPLOADS_DIR, { recursive: true }); } catch (_) {}
 
 // Daftar Baku Warna (SRS Bagian 4 NFR-03 & 9.2 - 12 warna baku)
 const STANDARD_COLORS = [
@@ -100,7 +100,9 @@ function ensureMockupAssets() {
   for (const [name, content] of Object.entries(svgs)) {
     const file = path.join(ASSETS_DIR, name);
     if (!fs.existsSync(file)) {
-      fs.writeFileSync(file, content, 'utf8');
+      try {
+        fs.writeFileSync(file, content, 'utf8');
+      } catch (_) {}
     }
   }
 }

@@ -7,7 +7,8 @@
     "start": "node src/server.js",
     "dev": "node src/server.js",
     "test": "node tests/run-tests.js",
-    "test:ai": "node tests/test-ai-service.js"
+    "test:ai": "node tests/test-ai-service.js",
+    "generate:pdf": "node scripts/generate-pdf.js"
   },
   "engines": {
     "node": ">=22.5.0"
