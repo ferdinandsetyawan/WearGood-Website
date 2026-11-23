@@ -2823,8 +2823,8 @@ if (require.main === module) {
   const PORT = Number(process.env.PORT || 3000);
   const { server, aiService } = createAppServer();
   const aiStatus = aiService.getStatus();
-  server.listen(PORT, () => {
-    console.log(`WearGoods MVP Server berjalan di http://localhost:${PORT}`);
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`WearGoods MVP Server berjalan di http://0.0.0.0:${PORT}`);
     console.log(
       aiStatus.mode === 'gemini'
         ? aiStatus.image_generation_enabled
