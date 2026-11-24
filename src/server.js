@@ -346,13 +346,6 @@ function runAiClothingRecognition(filename = '', hintText = '') {
     ai_confidence: overallConfidence,
     needs_review: lowConfidenceFields.length > 0,
     low_confidence_fields: lowConfidenceFields,
-    box_2d: [80, 100, 920, 900],
-    crop_box: { ymin: 80, xmin: 100, ymax: 920, xmax: 900 },
-    polygon: [
-      [400, 80], [600, 80], [700, 160], [880, 300], [800, 420],
-      [730, 360], [720, 900], [280, 900], [270, 360], [200, 420],
-      [120, 300], [300, 160], [400, 80]
-    ],
     background_removed: bgRemovedSuccess,
     preprocessing_notice: bgRemovedSuccess
       ? 'Latar belakang berhasil dihapus dan ukuran gambar dinormalkan.'
@@ -1476,27 +1469,9 @@ function createAppServer(customDbPath, options = {}) {
           outerwear: '/assets/mockup-outerwear.svg',
           one_piece: '/assets/mockup-one_piece.svg'
         };
-        let cleanImg = (body.raw_image_url || body.image_url || defaultAssetByCat[category] || '/assets/item-1.png').split('?')[0];
-        let cleanOrig = (body.raw_original_url || body.original_image_url || cleanImg).split('?')[0];
-        let cleanThumb = (body.thumbnail_url || cleanImg).split('?')[0];
-
-        if (body.cropped_image_base64 && typeof body.cropped_image_base64 === 'string') {
-          try {
-            const rawB64 = body.cropped_image_base64.replace(/^data:image\/\w+;base64,/, '');
-            const cropBuf = Buffer.from(rawB64, 'base64');
-            if (cropBuf.length > 500 && cropBuf.length < 15 * 1024 * 1024) {
-              const isPng = body.cropped_image_base64.includes('image/png');
-              const ext = isPng ? '.png' : '.jpg';
-              const croppedFileId = `${crypto.randomUUID()}-crop${ext}`;
-              const croppedFilePath = path.join(UPLOADS_DIR, croppedFileId);
-              fs.writeFileSync(croppedFilePath, cropBuf);
-              cleanImg = `/uploads/${croppedFileId}`;
-              cleanThumb = `/uploads/${croppedFileId}`;
-            }
-          } catch (cropErr) {
-            console.warn('[Wardrobe Item] Gagal menyimpan cropped_image_base64:', cropErr.message);
-          }
-        }
+        const cleanImg = (body.raw_image_url || body.image_url || defaultAssetByCat[category] || '/assets/item-1.png').split('?')[0];
+        const cleanOrig = (body.raw_original_url || body.original_image_url || cleanImg).split('?')[0];
+        const cleanThumb = (body.thumbnail_url || cleanImg).split('?')[0];
 
         const now = new Date().toISOString();
         const itemId = crypto.randomUUID();
@@ -1593,35 +1568,15 @@ function createAppServer(customDbPath, options = {}) {
               ? (entry.characteristics?.formality || entry.formality)
               : 'smart_casual'
           };
-          let cleanImg = (entry.raw_image_url || entry.image_url || defaultAssetByCat[category] || '/assets/item-1.png').split('?')[0];
-          let cleanOrig = (entry.raw_original_url || entry.original_image_url || cleanImg).split('?')[0];
-          let cleanThumb = (entry.thumbnail_url || cleanImg).split('?')[0];
-
-          if (entry.cropped_image_base64 && typeof entry.cropped_image_base64 === 'string') {
-            try {
-              const rawB64 = entry.cropped_image_base64.replace(/^data:image\/\w+;base64,/, '');
-              const cropBuf = Buffer.from(rawB64, 'base64');
-              if (cropBuf.length > 500 && cropBuf.length < 15 * 1024 * 1024) {
-                const isPng = entry.cropped_image_base64.includes('image/png');
-                const ext = isPng ? '.png' : '.jpg';
-                const croppedFileId = `${crypto.randomUUID()}-crop${ext}`;
-                const croppedFilePath = path.join(UPLOADS_DIR, croppedFileId);
-                fs.writeFileSync(croppedFilePath, cropBuf);
-                cleanImg = `/uploads/${croppedFileId}`;
-                cleanThumb = `/uploads/${croppedFileId}`;
-              }
-            } catch (cropErr) {
-              console.warn('[Wardrobe Bulk] Gagal menyimpan cropped_image_base64:', cropErr.message);
-            }
-          }
+          const cleanImg = (entry.raw_image_url || entry.image_url || defaultAssetByCat[category] || '/assets/item-1.png').split('?')[0];
 
           insertStmt.run(
             itemId,
             user.user_id,
             name,
             cleanImg,
-            cleanOrig,
-            cleanThumb,
+            cleanImg,
+            cleanImg,
             category,
             subCategory,
             primaryColor,

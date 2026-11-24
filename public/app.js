@@ -1751,46 +1751,6 @@ function bindWardrobeEvents() {
     }, 'image/jpeg', 0.85);
   });
 
-  // Toggle AI Garment Cutout / Original Photo Preview
-  document.getElementById('btn-toggle-crop-mode')?.addEventListener('click', () => {
-    const entry = state.batchQueue[state.activeBatchIndex];
-    if (!entry) return;
-    entry.activePreviewMode = entry.activePreviewMode === 'cutout' ? 'original' : 'cutout';
-
-    const previewImg = document.getElementById('upload-active-preview-img');
-    const toggleBtn = document.getElementById('btn-toggle-crop-mode');
-    const statusBadge = document.getElementById('crop-status-badge');
-    const cropModeLabel = document.getElementById('btn-crop-mode-label');
-    const cropModeIcon = document.getElementById('btn-crop-mode-icon');
-    const box = document.getElementById('upload-preview-img-box');
-
-    if (entry.activePreviewMode === 'cutout' && entry.croppedDataUrl) {
-      previewImg.src = entry.croppedDataUrl;
-      toggleBtn?.classList.add('active');
-      box?.classList.add('bg-checker');
-      if (statusBadge) statusBadge.textContent = 'Fokus Pakaian & Cutout Aktif';
-      if (cropModeLabel) cropModeLabel.textContent = 'Mode: AI Cutout (Aktif)';
-      if (cropModeIcon) cropModeIcon.textContent = '✂️';
-      showFloatingToast('Mode: AI Cutout (Latar belakang dihapus, menyisakan pakaian).');
-    } else {
-      previewImg.src = entry.localPreviewUrl || entry.recognized?.image_url || '/assets/item-1.png';
-      toggleBtn?.classList.remove('active');
-      box?.classList.remove('bg-checker');
-      if (statusBadge) statusBadge.textContent = 'Foto Asli (Tanpa Cutout)';
-      if (cropModeLabel) cropModeLabel.textContent = 'Mode: Foto Asli';
-      if (cropModeIcon) cropModeIcon.textContent = '📷';
-      showFloatingToast('Mode: Foto Asli (Tanpa pemotongan latar).');
-    }
-    renderBatchQueueList();
-  });
-
-  document.getElementById('btn-toggle-bg-pattern')?.addEventListener('click', () => {
-    const box = document.getElementById('upload-preview-img-box');
-    box?.classList.toggle('bg-checker');
-    const isChecker = box?.classList.contains('bg-checker');
-    showFloatingToast(isChecker ? 'Latar kotak transparansi aktif (PNG Checker).' : 'Latar standar aktif.');
-  });
-
   // Save Single Clothing Item Form (FR-07)
   document.getElementById('add-clothing-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -1821,8 +1781,7 @@ function bindWardrobeEvents() {
       ai_confidence: activeQueueEntry?.recognized?.ai_confidence ?? 0.95,
       confirmed_low_confidence: confirmedLow,
       is_user_corrected: true,
-      raw_image_url: activeQueueEntry?.recognized?.raw_image_url,
-      cropped_image_base64: activeQueueEntry?.activePreviewMode === 'cutout' ? activeQueueEntry?.croppedDataUrl : null
+      raw_image_url: activeQueueEntry?.recognized?.raw_image_url
     };
 
     try {
@@ -1863,8 +1822,7 @@ function bindWardrobeEvents() {
         primary_color: q.recognized.primary_color,
         characteristics: q.recognized.characteristics,
         ai_confidence: q.recognized.ai_confidence,
-        raw_image_url: q.recognized.raw_image_url,
-        cropped_image_base64: q.activePreviewMode === 'cutout' ? q.croppedDataUrl : null
+        raw_image_url: q.recognized.raw_image_url
       }));
 
     if (validEntries.length === 0) {
@@ -2028,370 +1986,6 @@ function arrayBufferToBase64(buffer) {
   return btoa(binary);
 }
 
-// --------------------------------------------------------------------------
-// AI Garment Extraction: Smooth Spline Contour & Neural Precision Matting
-// --------------------------------------------------------------------------
-
-// 1. Draw smooth Catmull-Rom cubic Bezier spline path across polygon vertices
-function drawSmoothSplinePath(ctx, pts) {
-  if (!pts || pts.length < 3) return;
-  const n = pts.length;
-  ctx.beginPath();
-  ctx.moveTo(pts[0][0], pts[0][1]);
-  for (let i = 0; i < n; i++) {
-    const p0 = pts[(i - 1 + n) % n];
-    const p1 = pts[i];
-    const p2 = pts[(i + 1) % n];
-    const p3 = pts[(i + 2) % n];
-
-    // Tension 0.5 Catmull-Rom converted to Bezier control points
-    const cp1x = p1[0] + (p2[0] - p0[0]) / 6;
-    const cp1y = p1[1] + (p2[1] - p0[1]) / 6;
-    const cp2x = p2[0] - (p3[0] - p1[0]) / 6;
-    const cp2y = p2[1] - (p3[1] - p1[1]) / 6;
-
-    ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2[0], p2[1]);
-  }
-  ctx.closePath();
-}
-
-// 2. Auto-crop non-transparent garment bounds to center neatly
-function trimTransparentEdges(imageElement, paddingPercent = 0.04) {
-  try {
-    const c = document.createElement('canvas');
-    const nw = imageElement.naturalWidth || imageElement.width;
-    const nh = imageElement.naturalHeight || imageElement.height;
-    if (!nw || !nh) return null;
-    c.width = nw;
-    c.height = nh;
-    const ctx = c.getContext('2d', { willReadFrequently: true });
-    ctx.drawImage(imageElement, 0, 0);
-
-    const imgData = ctx.getImageData(0, 0, nw, nh);
-    const data = imgData.data;
-    let minX = nw, minY = nh, maxX = 0, maxY = 0;
-    let found = false;
-
-    for (let y = 0; y < nh; y += 2) {
-      for (let x = 0; x < nw; x += 2) {
-        const alpha = data[(y * nw + x) * 4 + 3];
-        if (alpha > 20) {
-          if (x < minX) minX = x;
-          if (x > maxX) maxX = x;
-          if (y < minY) minY = y;
-          if (y > maxY) maxY = y;
-          found = true;
-        }
-      }
-    }
-
-    if (!found) return null;
-
-    const w = Math.max(20, maxX - minX);
-    const h = Math.max(20, maxY - minY);
-    const padX = w * paddingPercent;
-    const padY = h * paddingPercent;
-
-    const cropX = Math.max(0, minX - padX);
-    const cropY = Math.max(0, minY - padY);
-    const cropW = Math.min(nw - cropX, w + padX * 2);
-    const cropH = Math.min(nh - cropY, h + padY * 2);
-
-    const targetSide = 720;
-    const outCanvas = document.createElement('canvas');
-    outCanvas.width = targetSide;
-    outCanvas.height = targetSide;
-    const outCtx = outCanvas.getContext('2d');
-
-    const scale = Math.min((targetSide * 0.92) / cropW, (targetSide * 0.92) / cropH);
-    const destW = Math.round(cropW * scale);
-    const destH = Math.round(cropH * scale);
-    const destX = Math.round((targetSide - destW) / 2);
-    const destY = Math.round((targetSide - destH) / 2);
-
-    outCtx.clearRect(0, 0, targetSide, targetSide);
-    outCtx.drawImage(c, cropX, cropY, cropW, cropH, destX, destY, destW, destH);
-    return outCanvas.toDataURL('image/png', 0.95);
-  } catch (err) {
-    console.warn('[AI Matting] Gagal trim border:', err);
-    return null;
-  }
-}
-
-// 3. Dynamic loader for @imgly/background-removal
-let imglyInstance = null;
-let imglyFailed = false;
-let imglyLoadingPromise = null;
-
-async function getImglyRemoveBackground() {
-  if (imglyFailed) return null;
-  if (imglyInstance) return imglyInstance;
-  if (!imglyLoadingPromise) {
-    imglyLoadingPromise = (async () => {
-      try {
-        const mod = await import('https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.5.7/+esm');
-        imglyInstance = mod.removeBackground || mod.default;
-        return imglyInstance;
-      } catch (err) {
-        console.warn('[AI Matting] CDN @imgly/background-removal tidak dapat dimuat, menggunakan spline canvas:', err.message);
-        imglyFailed = true;
-        return null;
-      }
-    })();
-  }
-  return imglyLoadingPromise;
-}
-
-// Preload quietly in idle time
-if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
-  window.requestIdleCallback(() => getImglyRemoveBackground());
-} else if (typeof window !== 'undefined') {
-  setTimeout(() => getImglyRemoveBackground(), 1500);
-}
-
-// 4. Run Neural AI Cutout via WebAssembly / ONNX (IS-Net)
-async function runImglyCutout(fileOrBlob) {
-  try {
-    const removeBgFn = await getImglyRemoveBackground();
-    if (typeof removeBgFn !== 'function') return null;
-
-    const config = {
-      model: 'isnet_quint8', // 8-bit quantized model for fast in-browser execution
-      publicPath: 'https://cdn.jsdelivr.net/npm/@imgly/background-removal-data@1.5.7/dist/',
-      debug: false
-    };
-
-    const blob = await removeBgFn(fileOrBlob, config);
-    return blob;
-  } catch (err) {
-    console.warn('[AI Matting] Eksekusi WASM neural gagal:', err.message);
-    return null;
-  }
-}
-
-// 5. Progressive AI Matting Trigger
-async function triggerProgressiveAiMatting(entry) {
-  if (!entry || !entry.file) return;
-  try {
-    const statusBadge = document.getElementById('crop-status-badge');
-    const activeEntry = state.batchQueue[state.activeBatchIndex];
-    if (activeEntry === entry && statusBadge) {
-      statusBadge.textContent = 'Memproses Cutout AI Presisi...';
-    }
-
-    const neuralBlob = await runImglyCutout(entry.file);
-    if (!neuralBlob) {
-      if (activeEntry === entry && statusBadge) {
-        statusBadge.textContent = 'Fokus Pakaian & Cutout Aktif';
-      }
-      return;
-    }
-
-    const blobUrl = URL.createObjectURL(neuralBlob);
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
-      try {
-        const trimmedDataUrl = trimTransparentEdges(img) || blobUrl;
-        entry.croppedDataUrl = trimmedDataUrl;
-        entry.isNeuralCutout = true;
-
-        const curActive = state.batchQueue[state.activeBatchIndex];
-        if (curActive === entry && entry.activePreviewMode === 'cutout') {
-          const previewImg = document.getElementById('upload-active-preview-img');
-          const badge = document.getElementById('crop-status-badge');
-          if (previewImg) previewImg.src = trimmedDataUrl;
-          if (badge) badge.textContent = '✨ AI Precision Matting Aktif';
-          showFloatingToast('✨ Cutout AI presisi tinggi berhasil diterapkan (Latar belakang bersih sempurna)!');
-        }
-        renderBatchQueueList();
-      } catch (err) {
-        console.warn('[AI Matting] Gagal trim cutout neural:', err);
-      }
-    };
-    img.src = blobUrl;
-  } catch (err) {
-    console.warn('[AI Matting] Progressive matting skipped:', err);
-  }
-}
-
-// --------------------------------------------------------------------------
-// AI Garment Extraction: Smooth Spline Contour & Color Masking
-// --------------------------------------------------------------------------
-async function processAiGarmentCropAndCutout(imageSrc, box2d, polygon) {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
-      try {
-        const nw = img.naturalWidth || img.width;
-        const nh = img.naturalHeight || img.height;
-        if (!nw || !nh) return resolve(null);
-
-        // 1. Normalize box_2d [ymin, xmin, ymax, xmax] (0..1000 scale)
-        let [ymin, xmin, ymax, xmax] = Array.isArray(box2d) && box2d.length === 4
-          ? box2d
-          : [80, 100, 920, 900];
-
-        ymin = Math.max(0, Math.min(1000, Number(ymin) || 0));
-        xmin = Math.max(0, Math.min(1000, Number(xmin) || 0));
-        ymax = Math.max(ymin + 50, Math.min(1000, Number(ymax) || 1000));
-        xmax = Math.max(xmin + 50, Math.min(1000, Number(xmax) || 1000));
-
-        // 2. Validate & normalize polygon contour points (0..1000 scale)
-        let validPoly = [];
-        if (Array.isArray(polygon) && polygon.length >= 3) {
-          validPoly = polygon
-            .filter((pt) => Array.isArray(pt) && pt.length >= 2)
-            .map(([x, y]) => [
-              Math.max(0, Math.min(1000, Number(x) || 0)),
-              Math.max(0, Math.min(1000, Number(y) || 0))
-            ]);
-        }
-
-        // Fallback polygon if AI provided no contour
-        if (validPoly.length < 3) {
-          validPoly = [
-            [Math.round((xmin + xmax) / 2), ymin],
-            [xmax, Math.round(ymin + (ymax - ymin) * 0.22)],
-            [xmax, ymax],
-            [xmin, ymax],
-            [xmin, Math.round(ymin + (ymax - ymin) * 0.22)]
-          ];
-        }
-
-        // 3. Compute tight bounding limits of the clothing silhouette
-        const polyXs = validPoly.map((p) => p[0]);
-        const polyYs = validPoly.map((p) => p[1]);
-        let minX = Math.min(...polyXs);
-        let maxX = Math.max(...polyXs);
-        let minY = Math.min(...polyYs);
-        let maxY = Math.max(...polyYs);
-
-        // Add 2.5% padding so garment borders don't touch canvas edges tightly
-        const garmentW = Math.max(40, maxX - minX);
-        const garmentH = Math.max(40, maxY - minY);
-        const padX = garmentW * 0.025;
-        const padY = garmentH * 0.025;
-
-        const cropMinX = Math.max(0, minX - padX);
-        const cropMaxX = Math.min(1000, maxX + padX);
-        const cropMinY = Math.max(0, minY - padY);
-        const cropMaxY = Math.min(1000, maxY + padY);
-
-        const effectiveW = Math.max(1, cropMaxX - cropMinX);
-        const effectiveH = Math.max(1, cropMaxY - cropMinY);
-
-        const cropX = Math.max(0, (cropMinX / 1000) * nw);
-        const cropY = Math.max(0, (cropMinY / 1000) * nh);
-        const cropW = Math.min(nw - cropX, (effectiveW / 1000) * nw);
-        const cropH = Math.min(nh - cropY, (effectiveH / 1000) * nh);
-
-        // 4. Render onto a clean square canvas with 100% transparent background
-        const targetSide = 720;
-        const canvas = document.createElement('canvas');
-        canvas.width = targetSide;
-        canvas.height = targetSide;
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-
-        // Maintain aspect ratio, center garment inside 92% of target canvas
-        const scale = Math.min((targetSide * 0.92) / cropW, (targetSide * 0.92) / cropH);
-        const destW = Math.round(cropW * scale);
-        const destH = Math.round(cropH * scale);
-        const destX = Math.round((targetSide - destW) / 2);
-        const destY = Math.round((targetSide - destH) / 2);
-
-        // Ensure canvas starts completely transparent (alpha = 0)
-        ctx.clearRect(0, 0, targetSide, targetSide);
-
-        // Map polygon to canvas space
-        const canvasPoints = validPoly.map(([px, py]) => {
-          const normX = (px - cropMinX) / effectiveW;
-          const normY = (py - cropMinY) / effectiveH;
-          return [destX + (normX * destW), destY + (normY * destH)];
-        });
-
-        // 5. Apply Smooth Cubic Bezier Spline Contour Clip:
-        // Replaces jagged sharp straight lines with smooth, organic curves!
-        ctx.save();
-        drawSmoothSplinePath(ctx, canvasPoints);
-        ctx.clip();
-
-        // Draw clothing pixels within the smooth spline contour
-        ctx.drawImage(img, cropX, cropY, cropW, cropH, destX, destY, destW, destH);
-        ctx.restore();
-
-        // 6. Smart Edge Refinement & Background Bleed Clean-up
-        try {
-          const imgData = ctx.getImageData(0, 0, targetSide, targetSide);
-          const data = imgData.data;
-
-          // Sample average background color from source image corners
-          const sampleCanvas = document.createElement('canvas');
-          sampleCanvas.width = 64;
-          sampleCanvas.height = 64;
-          const sCtx = sampleCanvas.getContext('2d');
-          sCtx.drawImage(img, 0, 0, 64, 64);
-          const sData = sCtx.getImageData(0, 0, 64, 64).data;
-
-          const cornerIdxs = [0, 63 * 4, (63 * 64) * 4, (63 * 64 + 63) * 4];
-          let bgR = 0, bgG = 0, bgB = 0;
-          cornerIdxs.forEach((idx) => {
-            bgR += sData[idx];
-            bgG += sData[idx + 1];
-            bgB += sData[idx + 2];
-          });
-          bgR = Math.round(bgR / 4);
-          bgG = Math.round(bgG / 4);
-          bgB = Math.round(bgB / 4);
-
-          // Clean up background bleed in perimeter transition zone
-          for (let y = 0; y < targetSide; y++) {
-            for (let x = 0; x < targetSide; x++) {
-              const idx = (y * targetSide + x) * 4;
-              if (data[idx + 3] === 0) continue;
-
-              const normDistX = (x - targetSide / 2) / (targetSide / 2);
-              const normDistY = (y - targetSide / 2) / (targetSide / 2);
-              const distFromCenter = Math.sqrt(normDistX * normDistX + normDistY * normDistY);
-
-              if (distFromCenter > 0.40) {
-                const dr = data[idx] - bgR;
-                const dg = data[idx + 1] - bgG;
-                const db = data[idx + 2] - bgB;
-                const colorDiff = Math.sqrt(dr * dr * 0.299 + dg * dg * 0.587 + db * db * 0.114);
-
-                if (colorDiff < 36) {
-                  data[idx + 3] = 0; // Completely erase matching background
-                } else if (colorDiff < 52) {
-                  const factor = (colorDiff - 36) / 16;
-                  data[idx + 3] = Math.round(data[idx + 3] * factor);
-                }
-              }
-            }
-          }
-          ctx.putImageData(imgData, 0, 0);
-        } catch (refineErr) {
-          // Refinement non-fatal
-        }
-
-        // Export as transparent PNG
-        const dataUrl = canvas.toDataURL('image/png', 0.95);
-        resolve({
-          dataUrl,
-          cropBox: { ymin: cropMinY, xmin: cropMinX, ymax: cropMaxY, xmax: cropMaxX },
-          polygon: validPoly
-        });
-      } catch (err) {
-        console.warn('[AI Garment Extraction] Gagal memproses canvas cutout:', err);
-        resolve(null);
-      }
-    };
-    img.onerror = () => resolve(null);
-    img.src = imageSrc;
-  });
-}
-
 async function handleSelectedClothingFiles(files) {
   const alertBox = document.getElementById('upload-alert-box');
   alertBox.classList.add('hidden');
@@ -2409,9 +2003,7 @@ async function handleSelectedClothingFiles(files) {
     status: 'queued',
     recognized: null,
     error: null,
-    saved: false,
-    croppedDataUrl: null,
-    activePreviewMode: 'cutout'
+    saved: false
   }));
   state.activeBatchIndex = 0;
   renderBatchQueueList();
@@ -2440,24 +2032,6 @@ async function handleSelectedClothingFiles(files) {
         });
         entry.status = 'succeeded';
         entry.recognized = res.recognized;
-        if (entry.localPreviewUrl && res.recognized) {
-          try {
-            const extraction = await processAiGarmentCropAndCutout(
-              entry.localPreviewUrl,
-              res.recognized.box_2d,
-              res.recognized.polygon
-            );
-            if (extraction) {
-              entry.croppedDataUrl = extraction.dataUrl;
-              entry.activePreviewMode = 'cutout';
-            }
-          } catch (cropErr) {
-            console.warn('[AI Garment Extraction] Gagal ekstraksi:', cropErr);
-          }
-
-          // Trigger progressive neural matting (IS-Net / RMBG)
-          triggerProgressiveAiMatting(entry);
-        }
       } catch (err) {
         entry.status = 'failed';
         entry.error = err.message;
@@ -2493,11 +2067,7 @@ function renderBatchQueueList() {
 
   listEl.innerHTML = state.batchQueue
     .map((q, idx) => {
-      const thumbSrc =
-        (q.activePreviewMode === 'cutout' && q.croppedDataUrl) ||
-        q.recognized?.image_url ||
-        q.localPreviewUrl ||
-        '/assets/item-1.png';
+      const thumbSrc = q.recognized?.image_url || q.localPreviewUrl || '/assets/item-1.png';
       const statusBadge =
         q.saved
           ? 'Tersimpan'
@@ -2566,56 +2136,10 @@ function selectBatchQueueItem(idx) {
     }
   });
 
-  // Update upload thumbnail preview stage with AI Cutout support
+  // Update upload thumbnail preview stage
   const stage = document.getElementById('upload-preview-stage');
   stage.classList.remove('hidden');
-
-  const previewImg = document.getElementById('upload-active-preview-img');
-  const toggleBtn = document.getElementById('btn-toggle-crop-mode');
-  const statusBadge = document.getElementById('crop-status-badge');
-  const cropModeLabel = document.getElementById('btn-crop-mode-label');
-  const cropModeIcon = document.getElementById('btn-crop-mode-icon');
-
-  function updateGarmentPreviewDisplay() {
-    const isCutout = entry.activePreviewMode === 'cutout' && entry.croppedDataUrl;
-    const box = document.getElementById('upload-preview-img-box');
-    if (isCutout) {
-      previewImg.src = entry.croppedDataUrl;
-      toggleBtn?.classList.add('active');
-      box?.classList.add('bg-checker');
-      if (statusBadge) {
-        statusBadge.textContent = entry.isNeuralCutout
-          ? '✨ AI Precision Matting Aktif'
-          : 'Fokus Pakaian & Cutout Aktif';
-      }
-      if (cropModeLabel) cropModeLabel.textContent = 'Mode: AI Cutout (Aktif)';
-      if (cropModeIcon) cropModeIcon.textContent = '✂️';
-    } else {
-      previewImg.src = entry.localPreviewUrl || r.image_url || '/assets/item-1.png';
-      toggleBtn?.classList.remove('active');
-      box?.classList.remove('bg-checker');
-      if (statusBadge) statusBadge.textContent = 'Foto Asli (Tanpa Cutout)';
-      if (cropModeLabel) cropModeLabel.textContent = 'Mode: Foto Asli';
-      if (cropModeIcon) cropModeIcon.textContent = '📷';
-    }
-  }
-
-  if (!entry.croppedDataUrl && (entry.localPreviewUrl || r.image_url)) {
-    processAiGarmentCropAndCutout(entry.localPreviewUrl || r.image_url, r.box_2d, r.polygon).then((res) => {
-      if (res && res.dataUrl) {
-        entry.croppedDataUrl = res.dataUrl;
-        entry.activePreviewMode = 'cutout';
-        updateGarmentPreviewDisplay();
-        renderBatchQueueList();
-      }
-    });
-  }
-
-  if (entry.file && !entry.isNeuralCutout) {
-    triggerProgressiveAiMatting(entry);
-  }
-
-  updateGarmentPreviewDisplay();
+  document.getElementById('upload-active-preview-img').src = r.image_url || '/assets/item-1.png';
 
   const conf = r.confidence_per_field || {};
   setConfidenceTag('badge-conf-cat', conf.category);

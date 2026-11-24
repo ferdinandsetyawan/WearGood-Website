@@ -139,8 +139,6 @@ async function runAiTests() {
       assert.equal(okRes.category, 'outerwear');
       assert.equal(okRes.primary_color, 'Navy');
       assert.equal(okRes.needs_review, false);
-      assert.ok(Array.isArray(okRes.polygon) && okRes.polygon.length >= 3);
-      assert.ok(Array.isArray(okRes.box_2d) && okRes.box_2d.length === 4);
 
       const svcNotClothing = createAiService({
         apiKey: 'fake-key',

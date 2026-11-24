@@ -77,8 +77,6 @@ async function runTests() {
       }, nadiaToken);
       assert.equal(res.status, 200);
       assert.equal(res.data.recognized.background_removed, true);
-      assert.ok(Array.isArray(res.data.recognized.polygon) && res.data.recognized.polygon.length >= 3);
-      assert.ok(Array.isArray(res.data.recognized.box_2d) && res.data.recognized.box_2d.length === 4);
       assert.equal(res.data.recognized.category, 'top');
       assert.ok(res.data.recognized.sub_category.toLowerCase().includes('kemeja'));
       assert.equal(res.data.recognized.characteristics.pattern, 'Kotak-kotak');
