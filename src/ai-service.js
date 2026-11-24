@@ -608,6 +608,195 @@ function createAiService(options = {}) {
     };
   }
 
+  async function extractGarmentImage({ buffer, mimeType, garmentName = 'garment', tryOnId }) {
+    const extractorUrl = String(process.env.CLOTHING_EXTRACTOR_URL || 'http://127.0.0.1:8000/extract-clothing/').trim();
+    if (!extractorUrl) return buffer;
+
+    try {
+      const form = new FormData();
+      const safeMime = ['image/png', 'image/webp', 'image/jpeg'].includes(mimeType) ? mimeType : 'image/jpeg';
+      form.append('file', new Blob([buffer], { type: safeMime }), `garment-${tryOnId}.jpg`);
+
+      const response = await withTimeout(
+        fetch(`${extractorUrl}?photo_type=worn`, {
+          method: 'POST',
+          body: form
+        }),
+        120000,
+        'Ekstraksi pakaian dari foto wardrobe melewati batas waktu.'
+      );
+
+      if (!response.ok) {
+        throw new Error(`Ekstraksi pakaian gagal (${response.status}).`);
+      }
+
+      return Buffer.from(await response.arrayBuffer());
+    } catch (err) {
+      console.warn(`[WearGoods AI] Ekstraksi garment dilewati (${err.message}); memakai foto pakaian asli.`);
+      return buffer;
+    }
+  }
+
+  async function generateHfTryOnImage({ personBuffer, personMimeType, garmentImages, tryOnId, uploadsDir }) {
+    if (!personBuffer || !uploadsDir || !garmentImages?.length) return null;
+
+    try {
+      const { Client } = await import('@gradio/client');
+      const spaceName = String(process.env.HF_VTON_SPACE || 'yisol/IDM-VTON').trim();
+      const hfToken = String(process.env.HF_TOKEN || '').trim();
+      const client = await Client.connect(
+        spaceName,
+        hfToken ? { token: hfToken } : undefined
+      );
+
+      const tempDir = path.join(uploadsDir, '..', 'tmp');
+      fs.mkdirSync(tempDir, { recursive: true });
+      const personExt = personMimeType === 'image/png' ? '.png' : personMimeType === 'image/webp' ? '.webp' : '.jpg';
+      const garment = garmentImages.find((item) => item.category === 'top' || item.category === 'one_piece')
+        || garmentImages.find((item) => /shirt|kaos|kemeja|top|baju/i.test(item.name))
+        || garmentImages[0];
+      const garmentExt = garment.mimeType === 'image/png' ? '.png' : garment.mimeType === 'image/webp' ? '.webp' : '.jpg';
+      const garmentBuffer = garment.buffer;
+
+      const personPath = path.join(tempDir, `hf-person-${tryOnId}${personExt}`);
+      const garmentPath = path.join(tempDir, `hf-garment-${tryOnId}${garment.mimeType === 'image/png' ? '.png' : garment.mimeType === 'image/webp' ? '.webp' : '.jpg'}`);
+      fs.writeFileSync(personPath, personBuffer);
+      fs.writeFileSync(garmentPath, garmentBuffer);
+
+      try {
+        const personBlob = new Blob([personBuffer], { type: personMimeType });
+        const garmentBlob = new Blob([garmentBuffer], {
+          type: garment.mimeType === 'image/png' || garment.mimeType === 'image/webp' || garment.mimeType === 'image/jpeg'
+            ? garment.mimeType
+            : 'image/jpeg'
+        });
+        const result = await withTimeout(
+          client.predict('/tryon', [
+            { background: personBlob, layers: [], composite: null },
+            garmentBlob,
+            garment.name || 'Fashion garment',
+            true,
+            false,
+            30,
+            42
+          ]),
+          Number(process.env.HF_TIMEOUT_MS || 180000),
+          'Hugging Face IDM-VTON melewati batas waktu.'
+        );
+
+        const output = result?.data?.[0];
+        let outputBuffer = null;
+        if (typeof output === 'string' && /^https?:\/\//.test(output)) {
+          const response = await fetch(output);
+          if (!response.ok) throw new Error(`Unduhan hasil IDM-VTON gagal (${response.status}).`);
+          outputBuffer = Buffer.from(await response.arrayBuffer());
+        } else if (output?.url) {
+          const response = await fetch(output.url);
+          if (!response.ok) throw new Error(`Unduhan hasil IDM-VTON gagal (${response.status}).`);
+          outputBuffer = Buffer.from(await response.arrayBuffer());
+        } else if (output?.path && fs.existsSync(output.path)) {
+          outputBuffer = fs.readFileSync(output.path);
+        }
+
+        if (!outputBuffer) return null;
+
+        const fileName = `tryon-hf-${tryOnId}.png`;
+        fs.writeFileSync(path.join(uploadsDir, fileName), outputBuffer);
+        return `/uploads/${fileName}`;
+      } finally {
+        fs.rmSync(personPath, { force: true });
+        fs.rmSync(garmentPath, { force: true });
+      }
+    } catch (err) {
+      const hfError = new Error(`IDM-VTON Hugging Face gagal: ${err.message}`);
+      hfError.status = err.status || 502;
+      hfError.code = 'HF_TRY_ON_FAILED';
+      throw hfError;
+    }
+  }
+
+  async function generateTryOnImage({ personBuffer, personMimeType, garmentImages, tryOnId, uploadsDir }) {
+    if (!isLiveEnabled() || !imageGenerationEnabled || !personBuffer || !uploadsDir) {
+      return null;
+    }
+
+    try {
+      const client = await getClient();
+      const safePersonMime = ['image/jpeg', 'image/png', 'image/webp'].includes(personMimeType)
+        ? personMimeType
+        : 'image/jpeg';
+
+      const garmentContent = (garmentImages || []).slice(0, 5).map((item, index) => ({
+        type: 'image',
+        data: Buffer.from(item.buffer).toString('base64'),
+        mime_type: item.mimeType === 'image/png' || item.mimeType === 'image/webp'
+          ? item.mimeType
+          : 'image/jpeg'
+      }));
+
+      const itemNames = (garmentImages || []).map((item) => item.name).filter(Boolean).join(', ');
+      const promptText = [
+        'Create a realistic full-body fashion try-on preview.',
+        'Use the first image as the real person. Preserve the person face, body shape, pose, skin tone, hair, and natural proportions.',
+        'Replace or dress the person with every provided wardrobe garment in a natural, correctly fitted way.',
+        `The wardrobe items are: ${itemNames || 'the provided fashion items'}.`,
+        'Keep only one person, maintain the original camera angle and lighting, and produce a photorealistic editorial full-body portrait.',
+        'Do not change the face or identity. Do not show clothing on a hanger, mannequin, dummy, collage, or flat lay.',
+        'Do not add text, logos, watermarks, split panels, or extra people. Preserve a clean realistic background.'
+      ].join(' ');
+
+      const interaction = await withTimeout(
+        client.interactions.create({
+          model: imageModel,
+          store: false,
+          input: [
+            {
+              type: 'user_input',
+              content: [
+                { type: 'text', text: promptText },
+                {
+                  type: 'image',
+                  data: Buffer.from(personBuffer).toString('base64'),
+                  mime_type: safePersonMime
+                },
+                ...garmentContent
+              ]
+            }
+          ],
+          response_format: {
+            type: 'image',
+            aspect_ratio: '3:4',
+            image_size: '1K'
+          }
+        }),
+        timeoutMs,
+        'Layanan virtual try-on melewati batas waktu.'
+      );
+
+      const outputImg = interaction?.output_image;
+      if (!outputImg?.data) return null;
+
+      const imgMime = String(outputImg.mime_type || 'image/png').toLowerCase();
+      const ext = imgMime.includes('webp') ? '.webp' : imgMime.includes('jpeg') || imgMime.includes('jpg') ? '.jpg' : '.png';
+      const fileName = `tryon-${tryOnId}${ext}`;
+      fs.mkdirSync(uploadsDir, { recursive: true });
+      fs.writeFileSync(path.join(uploadsDir, fileName), Buffer.from(outputImg.data, 'base64'));
+      return `/uploads/${fileName}`;
+    } catch (err) {
+      console.warn(`[WearGoods AI] Gagal membuat virtual try-on (${err.message}).`);
+      const message = String(err.message || '').toLowerCase();
+      if (err.status === 429 || message.includes('rate limit') || message.includes('quota')) {
+        const quotaError = new Error(
+          'Kuota/akses model gambar Gemini belum tersedia untuk API key ini. Aktifkan billing atau tingkatkan tier proyek Google AI, lalu coba lagi.'
+        );
+        quotaError.status = 429;
+        quotaError.code = 'AI_IMAGE_QUOTA_EXCEEDED';
+        throw quotaError;
+      }
+      throw err;
+    }
+  }
+
   async function generateMockupImage({ prompt, mockupId, uploadsDir }) {
     if (!isLiveEnabled() || !imageGenerationEnabled || !prompt || !uploadsDir) {
       return null;
@@ -660,6 +849,8 @@ function createAiService(options = {}) {
     recognizeClothing,
     generateOutfit,
     analyzeItemGap,
+    generateHfTryOnImage,
+    generateTryOnImage,
     generateMockupImage
   };
 }

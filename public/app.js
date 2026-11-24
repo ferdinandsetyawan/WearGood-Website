@@ -286,6 +286,7 @@ async function initApp() {
   bindWardrobeEvents();
   bindKoleksiEvents();
   bindPreferensiEvents();
+  bindTryOnEvents();
   bindModalCloseEvents();
 
   const explicitlyLoggedOut = sessionStorage.getItem('weargoods_logged_out') === 'true';
@@ -956,6 +957,124 @@ function syncBriefPillsWithState() {
   });
   document.querySelectorAll('#brief-style-pills .pill-btn').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.style === state.brief.style_code);
+  });
+}
+
+let tryOnPersonFile = null;
+let tryOnStream = null;
+
+function stopTryOnCamera() {
+  if (tryOnStream) {
+    tryOnStream.getTracks().forEach((track) => track.stop());
+    tryOnStream = null;
+  }
+  document.getElementById('try-on-camera-box')?.classList.add('hidden');
+}
+
+function bindTryOnEvents() {
+  document.getElementById('btn-open-try-on')?.addEventListener('click', () => {
+    if (!state.activeOutfit) return;
+    tryOnPersonFile = null;
+    document.getElementById('try-on-file').value = '';
+    document.getElementById('try-on-person-preview').classList.add('hidden');
+    document.getElementById('try-on-result').classList.add('hidden');
+    document.getElementById('try-on-result').innerHTML = '';
+    openModal('modal-try-on');
+  });
+
+  document.getElementById('btn-hasil-coba-outfit')?.addEventListener('click', () => {
+    if (!state.activeOutfit) return;
+    tryOnPersonFile = null;
+    document.getElementById('try-on-file').value = '';
+    document.getElementById('try-on-person-preview').classList.add('hidden');
+    document.getElementById('try-on-result').classList.add('hidden');
+    document.getElementById('try-on-result').innerHTML = '';
+    openModal('modal-try-on');
+  });
+
+  document.getElementById('try-on-file')?.addEventListener('change', (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    tryOnPersonFile = file;
+    const preview = document.getElementById('try-on-person-preview');
+    preview.src = URL.createObjectURL(file);
+    preview.classList.remove('hidden');
+  });
+
+  document.getElementById('btn-try-on-camera')?.addEventListener('click', async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      showFloatingToast('Kamera tidak tersedia di browser ini.');
+      return;
+    }
+    try {
+      tryOnStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: { ideal: 1080 }, height: { ideal: 1440 } }
+      });
+      document.getElementById('try-on-video').srcObject = tryOnStream;
+      document.getElementById('try-on-camera-box').classList.remove('hidden');
+    } catch {
+      showFloatingToast('Izin kamera ditolak atau kamera tidak tersedia.');
+    }
+  });
+
+  document.getElementById('btn-try-on-snapshot')?.addEventListener('click', () => {
+    const video = document.getElementById('try-on-video');
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth || 1080;
+    canvas.height = video.videoHeight || 1440;
+    canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+    stopTryOnCamera();
+
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      tryOnPersonFile = new File([blob], 'kamera-try-on.jpg', { type: 'image/jpeg' });
+      const preview = document.getElementById('try-on-person-preview');
+      preview.src = URL.createObjectURL(tryOnPersonFile);
+      preview.classList.remove('hidden');
+    }, 'image/jpeg', 0.92);
+  });
+
+  document.getElementById('btn-submit-try-on')?.addEventListener('click', async () => {
+    if (!tryOnPersonFile) {
+      showFloatingToast('Pilih foto atau ambil foto dulu.');
+      return;
+    }
+    if (!state.activeOutfit) return;
+
+    const button = document.getElementById('btn-submit-try-on');
+    const result = document.getElementById('try-on-result');
+    button.disabled = true;
+    button.textContent = 'Membuat preview...';
+    result.classList.remove('hidden');
+    result.innerHTML = '<p class="small-muted">AI sedang menyesuaikan pakaian pada foto Anda...</p>';
+
+    try {
+      const compressed = await compressImageClientSide(tryOnPersonFile);
+      const response = await apiFetch('/api/v1/try-on', {
+        method: 'POST',
+        body: JSON.stringify({
+          outfit_id: state.activeOutfit.outfit_id,
+          mime_type: tryOnPersonFile.type,
+          raw_size_bytes: compressed.rawSize,
+          file_base64: compressed.base64
+        })
+      });
+
+      result.innerHTML = `
+        <img src="${escapeHtml(response.try_on_image_url)}" alt="Hasil virtual try-on" style="width:100%;border-radius:8px;object-fit:contain;" />
+        <p class="tiny-muted mt-8">Hasil AI dapat berbeda dari bentuk, kain, atau ukuran asli.</p>
+      `;
+      await refreshUsageQuota();
+    } catch (error) {
+      result.innerHTML = `<div class="alert-box alert-error">${escapeHtml(error.message)}</div>`;
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Buat Preview';
+    }
+  });
+
+  document.querySelectorAll('[data-close-modal="modal-try-on"]').forEach((button) => {
+    button.addEventListener('click', stopTryOnCamera);
   });
 }
 

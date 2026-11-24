@@ -20,9 +20,9 @@ const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 
 // Daily AI Quotas (SRS FR-19)
 const AI_QUOTA_LIMITS = {
-  recognize: 50,
-  outfit: 30,
-  mockup: 5
+  recognize: Number(process.env.AI_QUOTA_RECOGNIZE || 50),
+  outfit: Number(process.env.AI_QUOTA_OUTFIT || 30),
+  mockup: Number(process.env.AI_QUOTA_MOCKUP || 100)
 };
 
 const passwordResetRate = new Map(); // key: email -> [timestamps]
@@ -1389,7 +1389,32 @@ function createAppServer(customDbPath, options = {}) {
           if (!aiResult) {
             aiResult = runAiClothingRecognition(filename, hintText);
           }
-          const rawImageUrl = isRealPhotoUpload ? `/uploads/${storedFileId}` : aiResult.default_asset_url;
+          let rawImageUrl = isRealPhotoUpload ? `/uploads/${storedFileId}` : aiResult.default_asset_url;
+
+          if (isRealPhotoUpload) {
+            try {
+              const extractedFileId = `${crypto.randomUUID()}.png`;
+              const extractedPath = path.join(UPLOADS_DIR, extractedFileId);
+              const extractorUrl = String(process.env.CLOTHING_EXTRACTOR_URL || 'http://127.0.0.1:8000/extract-clothing/').trim();
+              const form = new FormData();
+              form.append('file', new Blob([cleanBuffer], { type: magicCheck.format === 'png' ? 'image/png' : magicCheck.format === 'webp' ? 'image/webp' : 'image/jpeg' }), filename);
+
+              const extractResponse = await fetch(`${extractorUrl}?photo_type=flatlay`, {
+                method: 'POST',
+                body: form
+              });
+
+              if (!extractResponse.ok) {
+                throw new Error(`Ekstraksi gagal (${extractResponse.status}).`);
+              }
+
+              const extractedBuffer = Buffer.from(await extractResponse.arrayBuffer());
+              fs.writeFileSync(extractedPath, extractedBuffer);
+              rawImageUrl = `/uploads/${extractedFileId}`;
+            } catch (extractErr) {
+              console.warn(`[WearGoods] Ekstraksi upload dilewati (${extractErr.message}); menggunakan foto asli.`);
+            }
+          }
 
           return sendJson(res, 200, {
             recognized: {
@@ -1416,6 +1441,125 @@ function createAppServer(customDbPath, options = {}) {
             aiErr.code || 'AI_RECOGNIZE_ERROR',
             aiErr.message || 'Gagal mengenali atribut pakaian.'
           );
+        }
+      }
+
+      if (pathname === '/api/v1/try-on' && method === 'POST') {
+        const user = authenticate(req);
+        if (!user) return sendError(res, 401, 'UNAUTHORIZED', 'Silakan login terlebih dahulu.');
+
+        const body = await parseJsonBody(req);
+        const outfitId = String(body.outfit_id || '').trim();
+        if (!outfitId) {
+          return sendError(res, 400, 'OUTFIT_REQUIRED', 'Outfit yang akan dicoba wajib dipilih.');
+        }
+
+        const outfitRow = db.prepare('SELECT * FROM outfits WHERE outfit_id = ?').get(outfitId);
+        if (!outfitRow) return sendError(res, 404, 'OUTFIT_NOT_FOUND', 'Outfit tidak ditemukan.');
+        if (outfitRow.user_id !== user.user_id) {
+          return sendError(res, 403, 'FORBIDDEN_NOT_OWNER', 'Anda bukan pemilik outfit ini.');
+        }
+
+        let personBuffer = null;
+        let personMimeType = String(body.mime_type || 'image/jpeg');
+        if (body.file_base64) {
+          const base64Clean = String(body.file_base64).replace(/^data:[^;]+;base64,/, '');
+          personBuffer = Buffer.from(base64Clean, 'base64');
+          if (String(body.file_base64).startsWith('data:image/png')) personMimeType = 'image/png';
+          if (String(body.file_base64).startsWith('data:image/webp')) personMimeType = 'image/webp';
+        }
+
+        if (!personBuffer || personBuffer.length < 2048) {
+          return sendError(res, 400, 'PERSON_PHOTO_REQUIRED', 'Ambil atau unggah foto tubuh Anda dengan pencahayaan terang dan posisi tegak.');
+        }
+
+        const magicCheck = inspectFileMagicBytes(personBuffer, 'person-photo.jpg', personMimeType);
+        if (!magicCheck.valid) {
+          return sendError(res, magicCheck.status, 'UNSUPPORTED_MEDIA_TYPE', magicCheck.message);
+        }
+
+        const quota = consumeAiQuota(user.user_id, 'mockup');
+        if (!quota.allowed) {
+          return sendJson(res, 429, {
+            error: {
+              code: 'QUOTA_EXCEEDED',
+              message: `Kuota virtual try-on harian Anda (${quota.limit}/hari) telah habis. Kuota akan pulih pukul 00:00 WIB.`,
+              details: { reset_at: quota.reset_at }
+            },
+            reset_at: quota.reset_at
+          });
+        }
+
+        try {
+          const cleanPersonBuffer = stripExifAndNormalizeBuffer(personBuffer, magicCheck.format);
+          const formatted = formatOutfit(outfitRow);
+          const garmentImages = [];
+
+          for (const item of formatted.items) {
+            const cleanImagePath = (item.image_url || item.original_image_url || '').split('?')[0];
+            if (!cleanImagePath.startsWith('/uploads/')) continue;
+
+            const safeName = path.basename(cleanImagePath);
+            let garmentPath = path.join(UPLOADS_DIR, safeName);
+            if (!fs.existsSync(garmentPath)) {
+              garmentPath = path.join(__dirname, '..', 'database', 'uploads', safeName);
+            }
+            if (!fs.existsSync(garmentPath)) continue;
+
+            const garmentBuffer = fs.readFileSync(garmentPath);
+            const garmentExt = path.extname(safeName).toLowerCase();
+            const garmentMimeType = garmentExt === '.png' ? 'image/png' : garmentExt === '.webp' ? 'image/webp' : 'image/jpeg';
+            garmentImages.push({
+              buffer: garmentBuffer,
+              mimeType: garmentMimeType,
+              name: item.name,
+              category: item.category || item.slot
+            });
+          }
+
+          if (garmentImages.length === 0) {
+            refundAiQuota(user.user_id, 'mockup');
+            return sendError(res, 422, 'GARMENT_IMAGE_MISSING', 'Foto pakaian pada outfit ini belum tersedia untuk virtual try-on.');
+          }
+
+          const tryOnId = crypto.randomUUID();
+          let tryOnUrl = null;
+
+          try {
+            tryOnUrl = await aiService.generateHfTryOnImage({
+              personBuffer: cleanPersonBuffer,
+              personMimeType: magicCheck.mimeType || personMimeType,
+              garmentImages,
+              tryOnId,
+              uploadsDir: UPLOADS_DIR
+            });
+          } catch (hfErr) {
+            refundAiQuota(user.user_id, 'mockup');
+            const hfMessage = String(hfErr.message || 'Hugging Face IDM-VTON gagal diproses.');
+            const quotaExceeded = /zerogpu|quota|rate limit/i.test(hfMessage);
+            return sendError(
+              res,
+              quotaExceeded ? 429 : (hfErr.status || 502),
+              quotaExceeded ? 'HF_ZERO_GPU_QUOTA' : 'HF_TRY_ON_FAILED',
+              quotaExceeded
+                ? 'Kuota ZeroGPU Hugging Face sudah habis atau sedang reset. Masukkan HF_TOKEN atau tunggu reset kuota, lalu coba lagi.'
+                : hfMessage
+            );
+          }
+
+          if (!tryOnUrl) {
+            refundAiQuota(user.user_id, 'mockup');
+            return sendError(res, 502, 'AI_TRY_ON_FAILED', 'Virtual try-on gagal diproses. Silakan coba lagi dengan foto yang lebih jelas.');
+          }
+
+          return sendJson(res, 200, {
+            try_on_image_url: createSignedStorageUrl(tryOnUrl),
+            outfit_id: outfitId,
+            quota_remaining: quota.limit - quota.used
+          });
+        } catch (tryOnErr) {
+          refundAiQuota(user.user_id, 'mockup');
+          return sendError(res, tryOnErr.status || 502, tryOnErr.code || 'AI_TRY_ON_FAILED', tryOnErr.message || 'Gagal membuat virtual try-on.');
         }
       }
 
@@ -1461,17 +1605,14 @@ function createAppServer(customDbPath, options = {}) {
             : 'smart_casual'
         };
 
-        const defaultAssetByCat = {
-          top: '/assets/item-1.png',
-          bottom: '/assets/item-2.png',
-          footwear: '/assets/item-3.png',
-          accessory: '/assets/item-4.png',
-          outerwear: '/assets/mockup-outerwear.svg',
-          one_piece: '/assets/mockup-one_piece.svg'
-        };
-        const cleanImg = (body.raw_image_url || body.image_url || defaultAssetByCat[category] || '/assets/item-1.png').split('?')[0];
-        const cleanOrig = (body.raw_original_url || body.original_image_url || cleanImg).split('?')[0];
-        const cleanThumb = (body.thumbnail_url || cleanImg).split('?')[0];
+        const realRawImage = String(body.raw_image_url || '').split('?')[0];
+        if (!realRawImage.startsWith('/uploads/')) {
+          return sendError(res, 400, 'EXTRACTED_IMAGE_REQUIRED', 'Foto pakaian hasil ekstraksi belum tersedia. Unggah foto ulang dan tunggu pemrosesan selesai.');
+        }
+
+        const cleanImg = realRawImage;
+        const cleanOrig = String(body.raw_original_url || body.original_image_url || realRawImage).split('?')[0];
+        const cleanThumb = String(body.thumbnail_url || realRawImage).split('?')[0];
 
         const now = new Date().toISOString();
         const itemId = crypto.randomUUID();
@@ -1530,15 +1671,6 @@ function createAppServer(customDbPath, options = {}) {
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
-        const defaultAssetByCat = {
-          top: '/assets/item-1.png',
-          bottom: '/assets/item-2.png',
-          footwear: '/assets/item-3.png',
-          accessory: '/assets/item-4.png',
-          outerwear: '/assets/mockup-outerwear.svg',
-          one_piece: '/assets/mockup-one_piece.svg'
-        };
-
         rawItems.forEach((entry, index) => {
           const category = String(entry.category || '').trim();
           const subCategory = String(entry.sub_category || '').trim();
@@ -1568,15 +1700,26 @@ function createAppServer(customDbPath, options = {}) {
               ? (entry.characteristics?.formality || entry.formality)
               : 'smart_casual'
           };
-          const cleanImg = (entry.raw_image_url || entry.image_url || defaultAssetByCat[category] || '/assets/item-1.png').split('?')[0];
+          const realRawImage = String(entry.raw_image_url || '').split('?')[0];
+          if (!realRawImage.startsWith('/uploads/')) {
+            failedItems.push({
+              index,
+              filename: entry.filename || `Foto #${index + 1}`,
+              reason: 'Foto hasil ekstraksi belum tersedia. Unggah foto ulang dan tunggu pemrosesan selesai.'
+            });
+            return;
+          }
+          const cleanImg = realRawImage;
+          const cleanOrig = String(entry.raw_original_url || entry.original_image_url || realRawImage).split('?')[0];
+          const cleanThumb = String(entry.thumbnail_url || realRawImage).split('?')[0];
 
           insertStmt.run(
             itemId,
             user.user_id,
             name,
             cleanImg,
-            cleanImg,
-            cleanImg,
+            cleanOrig,
+            cleanThumb,
             category,
             subCategory,
             primaryColor,
