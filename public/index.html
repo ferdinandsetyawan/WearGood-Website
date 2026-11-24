@@ -1208,14 +1208,29 @@
         </div>
         <div id="batch-queue-items" class="batch-queue-list mt-8"></div>
 
-        <!-- Thumbnail & Privacy Preview -->
+        <!-- Thumbnail & Privacy & AI Cutout Preview Stage -->
         <div id="upload-preview-stage" class="upload-preview-stage mt-12 hidden">
           <div class="preview-img-box" id="upload-preview-img-box">
             <img src="/assets/item-1.png" alt="Pratinjau foto pakaian" id="upload-active-preview-img" />
+            <canvas id="upload-crop-canvas" class="hidden"></canvas>
           </div>
           <div class="preview-meta-col">
-            <p class="meta-bold">Pratinjau foto pakaian</p>
-            <p class="tiny-muted mt-4" id="upload-exif-status">Metadata lokasi (EXIF &amp; GPS) dihapus otomatis saat disimpan.</p>
+            <div class="ai-crop-header-row">
+              <span class="badge-ai-pill">✨ AI Garment Extraction</span>
+              <span class="crop-status-tag" id="crop-status-badge">Fokus Pakaian &amp; Cutout Aktif</span>
+            </div>
+            <p class="meta-bold mt-4" id="upload-preview-title">Pratinjau Potongan Pakaian</p>
+            <p class="tiny-muted mt-2" id="upload-exif-status">
+              AI otomatis memotong fokus area pakaian &amp; menghapus latar belakang. EXIF/GPS dibersihkan.
+            </p>
+            <div class="ai-crop-btn-group mt-8">
+              <button type="button" class="btn btn-outline btn-xs active" id="btn-toggle-crop-mode" title="Beralih antara hasil crop AI dan foto asli">
+                <span id="btn-crop-mode-icon">✂️</span> <span id="btn-crop-mode-label">Mode: AI Cutout (Aktif)</span>
+              </button>
+              <button type="button" class="btn btn-outline btn-xs" id="btn-toggle-bg-pattern" title="Cek transparansi latar belakang">
+                🏁 Cek Transparansi
+              </button>
+            </div>
           </div>
         </div>
       </div>

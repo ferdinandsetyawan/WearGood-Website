@@ -2168,27 +2168,75 @@ button.lock-btn {
 .upload-preview-stage {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 16px;
   background: #ffffff;
-  padding: 12px;
+  padding: 14px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-subtle);
+  transition: all 0.2s ease;
 }
 
 .preview-img-box {
-  width: 84px;
-  height: 84px;
+  width: 96px;
+  height: 96px;
   border-radius: var(--radius-sm);
   overflow: hidden;
   background: var(--bg-soft);
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-subtle);
+  position: relative;
+  transition: background 0.2s ease;
 }
 
-.preview-img-box img {
+.preview-img-box.bg-checker {
+  background-image: linear-gradient(45deg, #e4e2dd 25%, transparent 25%),
+                    linear-gradient(-45deg, #e4e2dd 25%, transparent 25%),
+                    linear-gradient(45deg, transparent 75%, #e4e2dd 75%),
+                    linear-gradient(-45deg, transparent 75%, #e4e2dd 75%);
+  background-size: 14px 14px;
+  background-position: 0 0, 0 7px, 7px -7px, -7px 0px;
+}
+
+.preview-img-box img,
+.preview-img-box canvas {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   border-radius: 4px;
+  transition: transform 0.2s ease;
+}
+
+.ai-crop-header-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.badge-ai-pill {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--brand-green);
+  background: var(--bg-sage);
+  padding: 2px 8px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.crop-status-tag {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.ai-crop-btn-group {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 .item-modal-preview {

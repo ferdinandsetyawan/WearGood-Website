@@ -1751,6 +1751,43 @@ function bindWardrobeEvents() {
     }, 'image/jpeg', 0.85);
   });
 
+  // Toggle AI Garment Cutout / Original Photo Preview
+  document.getElementById('btn-toggle-crop-mode')?.addEventListener('click', () => {
+    const entry = state.batchQueue[state.activeBatchIndex];
+    if (!entry) return;
+    entry.activePreviewMode = entry.activePreviewMode === 'cutout' ? 'original' : 'cutout';
+
+    const previewImg = document.getElementById('upload-active-preview-img');
+    const toggleBtn = document.getElementById('btn-toggle-crop-mode');
+    const statusBadge = document.getElementById('crop-status-badge');
+    const cropModeLabel = document.getElementById('btn-crop-mode-label');
+    const cropModeIcon = document.getElementById('btn-crop-mode-icon');
+
+    if (entry.activePreviewMode === 'cutout' && entry.croppedDataUrl) {
+      previewImg.src = entry.croppedDataUrl;
+      toggleBtn?.classList.add('active');
+      if (statusBadge) statusBadge.textContent = 'Fokus Pakaian & Cutout Aktif';
+      if (cropModeLabel) cropModeLabel.textContent = 'Mode: AI Cutout (Aktif)';
+      if (cropModeIcon) cropModeIcon.textContent = '✂️';
+      showFloatingToast('Mode: AI Cutout (Fokus pakaian aktif).');
+    } else {
+      previewImg.src = entry.localPreviewUrl || entry.recognized?.image_url || '/assets/item-1.png';
+      toggleBtn?.classList.remove('active');
+      if (statusBadge) statusBadge.textContent = 'Foto Asli (Tanpa Cutout)';
+      if (cropModeLabel) cropModeLabel.textContent = 'Mode: Foto Asli';
+      if (cropModeIcon) cropModeIcon.textContent = '📷';
+      showFloatingToast('Mode: Foto Asli (Tanpa pemotongan).');
+    }
+    renderBatchQueueList();
+  });
+
+  document.getElementById('btn-toggle-bg-pattern')?.addEventListener('click', () => {
+    const box = document.getElementById('upload-preview-img-box');
+    box?.classList.toggle('bg-checker');
+    const isChecker = box?.classList.contains('bg-checker');
+    showFloatingToast(isChecker ? 'Latar kotak transparansi aktif (PNG Checker).' : 'Latar standar aktif.');
+  });
+
   // Save Single Clothing Item Form (FR-07)
   document.getElementById('add-clothing-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -1781,7 +1818,8 @@ function bindWardrobeEvents() {
       ai_confidence: activeQueueEntry?.recognized?.ai_confidence ?? 0.95,
       confirmed_low_confidence: confirmedLow,
       is_user_corrected: true,
-      raw_image_url: activeQueueEntry?.recognized?.raw_image_url
+      raw_image_url: activeQueueEntry?.recognized?.raw_image_url,
+      cropped_image_base64: activeQueueEntry?.activePreviewMode === 'cutout' ? activeQueueEntry?.croppedDataUrl : null
     };
 
     try {
@@ -1822,7 +1860,8 @@ function bindWardrobeEvents() {
         primary_color: q.recognized.primary_color,
         characteristics: q.recognized.characteristics,
         ai_confidence: q.recognized.ai_confidence,
-        raw_image_url: q.recognized.raw_image_url
+        raw_image_url: q.recognized.raw_image_url,
+        cropped_image_base64: q.activePreviewMode === 'cutout' ? q.croppedDataUrl : null
       }));
 
     if (validEntries.length === 0) {
@@ -1986,6 +2025,125 @@ function arrayBufferToBase64(buffer) {
   return btoa(binary);
 }
 
+// --------------------------------------------------------------------------
+// AI Garment Extraction: Smart Bounding Box Crop & Background Cutout
+// --------------------------------------------------------------------------
+async function processAiGarmentCropAndCutout(imageSrc, box2d) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      try {
+        const nw = img.naturalWidth || img.width;
+        const nh = img.naturalHeight || img.height;
+        if (!nw || !nh) return resolve(null);
+
+        // Normalize box_2d [ymin, xmin, ymax, xmax] (0..1000 scale)
+        let [ymin, xmin, ymax, xmax] = Array.isArray(box2d) && box2d.length === 4
+          ? box2d
+          : [80, 100, 920, 900];
+
+        ymin = Math.max(0, Math.min(1000, ymin));
+        xmin = Math.max(0, Math.min(1000, xmin));
+        ymax = Math.max(ymin + 50, Math.min(1000, ymax));
+        xmax = Math.max(xmin + 50, Math.min(1000, xmax));
+
+        // Add 3.5% padding around garment
+        const boxH = ymax - ymin;
+        const boxW = xmax - xmin;
+        const padY = boxH * 0.035;
+        const padX = boxW * 0.035;
+
+        const cropY = Math.max(0, ((ymin - padY) / 1000) * nh);
+        const cropX = Math.max(0, ((xmin - padX) / 1000) * nw);
+        const cropH = Math.min(nh - cropY, ((boxH + padY * 2) / 1000) * nh);
+        const cropW = Math.min(nw - cropX, ((boxW + padX * 2) / 1000) * nw);
+
+        const targetSide = 720;
+        const canvas = document.createElement('canvas');
+        canvas.width = targetSide;
+        canvas.height = targetSide;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+        const scale = Math.min((targetSide * 0.94) / cropW, (targetSide * 0.94) / cropH);
+        const destW = Math.round(cropW * scale);
+        const destH = Math.round(cropH * scale);
+        const destX = Math.round((targetSide - destW) / 2);
+        const destY = Math.round((targetSide - destH) / 2);
+
+        ctx.clearRect(0, 0, targetSide, targetSide);
+        ctx.drawImage(img, cropX, cropY, cropW, cropH, destX, destY, destW, destH);
+
+        // Smart Edge-Aware Background Cutout
+        const imgData = ctx.getImageData(0, 0, targetSide, targetSide);
+        const data = imgData.data;
+
+        const samplePoints = [
+          [destX + 2, destY + 2],
+          [destX + destW - 3, destY + 2],
+          [destX + 2, destY + destH - 3],
+          [destX + destW - 3, destY + destH - 3],
+          [Math.round(targetSide / 2), destY + 2],
+          [destX + 2, Math.round(targetSide / 2)],
+          [destX + destW - 3, Math.round(targetSide / 2)]
+        ];
+
+        let totalR = 0, totalG = 0, totalB = 0, count = 0;
+        samplePoints.forEach(([sx, sy]) => {
+          if (sx >= 0 && sx < targetSide && sy >= 0 && sy < targetSide) {
+            const idx = (sy * targetSide + sx) * 4;
+            if (data[idx + 3] > 100) {
+              totalR += data[idx];
+              totalG += data[idx + 1];
+              totalB += data[idx + 2];
+              count++;
+            }
+          }
+        });
+
+        if (count > 0) {
+          const bgR = totalR / count;
+          const bgG = totalG / count;
+          const bgB = totalB / count;
+
+          const colorThreshold = 46;
+          const featherRange = 26;
+
+          for (let y = 0; y < targetSide; y++) {
+            for (let x = 0; x < targetSide; x++) {
+              const i = (y * targetSide + x) * 4;
+              if (data[i + 3] === 0) continue;
+
+              const dx = (x - targetSide / 2) / (targetSide / 2);
+              const dy = (y - targetSide / 2) / (targetSide / 2);
+              const distFromCenter = Math.sqrt(dx * dx + dy * dy);
+
+              const dr = data[i] - bgR;
+              const dg = data[i + 1] - bgG;
+              const db = data[i + 2] - bgB;
+              const colorDist = Math.sqrt(dr * dr * 0.299 + dg * dg * 0.587 + db * db * 0.114);
+
+              if (colorDist < colorThreshold && distFromCenter > 0.42) {
+                const alphaFactor = Math.max(0, (colorDist - (colorThreshold - featherRange)) / featherRange);
+                data[i + 3] = Math.round(data[i + 3] * alphaFactor);
+              }
+            }
+          }
+          ctx.putImageData(imgData, 0, 0);
+        }
+
+        const dataUrl = canvas.toDataURL('image/png', 0.92);
+        resolve({ dataUrl, cropBox: { ymin, xmin, ymax, xmax } });
+      } catch (err) {
+        console.warn('[AI Garment Extraction] Gagal memproses canvas:', err);
+        resolve(null);
+      }
+    };
+    img.onerror = () => resolve(null);
+    img.src = imageSrc;
+  });
+}
+
 async function handleSelectedClothingFiles(files) {
   const alertBox = document.getElementById('upload-alert-box');
   alertBox.classList.add('hidden');
@@ -2003,7 +2161,9 @@ async function handleSelectedClothingFiles(files) {
     status: 'queued',
     recognized: null,
     error: null,
-    saved: false
+    saved: false,
+    croppedDataUrl: null,
+    activePreviewMode: 'cutout'
   }));
   state.activeBatchIndex = 0;
   renderBatchQueueList();
@@ -2032,6 +2192,17 @@ async function handleSelectedClothingFiles(files) {
         });
         entry.status = 'succeeded';
         entry.recognized = res.recognized;
+        if (entry.localPreviewUrl && res.recognized) {
+          try {
+            const extraction = await processAiGarmentCropAndCutout(entry.localPreviewUrl, res.recognized.box_2d);
+            if (extraction) {
+              entry.croppedDataUrl = extraction.dataUrl;
+              entry.activePreviewMode = 'cutout';
+            }
+          } catch (cropErr) {
+            console.warn('[AI Garment Extraction] Gagal ekstraksi:', cropErr);
+          }
+        }
       } catch (err) {
         entry.status = 'failed';
         entry.error = err.message;
@@ -2067,7 +2238,11 @@ function renderBatchQueueList() {
 
   listEl.innerHTML = state.batchQueue
     .map((q, idx) => {
-      const thumbSrc = q.recognized?.image_url || q.localPreviewUrl || '/assets/item-1.png';
+      const thumbSrc =
+        (q.activePreviewMode === 'cutout' && q.croppedDataUrl) ||
+        q.recognized?.image_url ||
+        q.localPreviewUrl ||
+        '/assets/item-1.png';
       const statusBadge =
         q.saved
           ? 'Tersimpan'
@@ -2136,10 +2311,45 @@ function selectBatchQueueItem(idx) {
     }
   });
 
-  // Update upload thumbnail preview stage
+  // Update upload thumbnail preview stage with AI Cutout support
   const stage = document.getElementById('upload-preview-stage');
   stage.classList.remove('hidden');
-  document.getElementById('upload-active-preview-img').src = r.image_url || '/assets/item-1.png';
+
+  const previewImg = document.getElementById('upload-active-preview-img');
+  const toggleBtn = document.getElementById('btn-toggle-crop-mode');
+  const statusBadge = document.getElementById('crop-status-badge');
+  const cropModeLabel = document.getElementById('btn-crop-mode-label');
+  const cropModeIcon = document.getElementById('btn-crop-mode-icon');
+
+  function updateGarmentPreviewDisplay() {
+    const isCutout = entry.activePreviewMode === 'cutout' && entry.croppedDataUrl;
+    if (isCutout) {
+      previewImg.src = entry.croppedDataUrl;
+      toggleBtn?.classList.add('active');
+      if (statusBadge) statusBadge.textContent = 'Fokus Pakaian & Cutout Aktif';
+      if (cropModeLabel) cropModeLabel.textContent = 'Mode: AI Cutout (Aktif)';
+      if (cropModeIcon) cropModeIcon.textContent = '✂️';
+    } else {
+      previewImg.src = entry.localPreviewUrl || r.image_url || '/assets/item-1.png';
+      toggleBtn?.classList.remove('active');
+      if (statusBadge) statusBadge.textContent = 'Foto Asli (Tanpa Cutout)';
+      if (cropModeLabel) cropModeLabel.textContent = 'Mode: Foto Asli';
+      if (cropModeIcon) cropModeIcon.textContent = '📷';
+    }
+  }
+
+  if (!entry.croppedDataUrl && (entry.localPreviewUrl || r.image_url)) {
+    processAiGarmentCropAndCutout(entry.localPreviewUrl || r.image_url, r.box_2d).then((res) => {
+      if (res && res.dataUrl) {
+        entry.croppedDataUrl = res.dataUrl;
+        entry.activePreviewMode = 'cutout';
+        updateGarmentPreviewDisplay();
+        renderBatchQueueList();
+      }
+    });
+  }
+
+  updateGarmentPreviewDisplay();
 
   const conf = r.confidence_per_field || {};
   setConfidenceTag('badge-conf-cat', conf.category);
