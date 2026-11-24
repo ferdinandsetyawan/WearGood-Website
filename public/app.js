@@ -2138,6 +2138,8 @@ async function handleSelectedClothingFiles(files) {
       renderBatchQueueList();
 
       try {
+        const photoTypeEl = document.getElementById('upload-photo-type-select');
+        const photoType = photoTypeEl ? photoTypeEl.value : 'worn';
         const compressed = await compressImageClientSide(entry.file);
         const res = await apiFetch('/api/v1/wardrobe/recognize', {
           method: 'POST',
@@ -2146,7 +2148,8 @@ async function handleSelectedClothingFiles(files) {
             mime_type: entry.file.type,
             raw_size_bytes: compressed.rawSize,
             file_base64: compressed.base64,
-            hint: entry.filename
+            hint: entry.filename,
+            photo_type: photoType
           })
         });
         entry.status = 'succeeded';
@@ -2258,7 +2261,33 @@ function selectBatchQueueItem(idx) {
   // Update upload thumbnail preview stage
   const stage = document.getElementById('upload-preview-stage');
   stage.classList.remove('hidden');
-  document.getElementById('upload-active-preview-img').src = r.image_url || '/assets/item-1.png';
+  const previewImg = document.getElementById('upload-active-preview-img');
+  const toggleBtn = document.getElementById('btn-toggle-preview-mode');
+  const badgeEl = document.getElementById('upload-extractor-badge');
+
+  const extractedUrl = r.image_url || '/assets/item-1.png';
+  const originalUrl = r.original_image_url || extractedUrl;
+
+  let showingExtracted = true;
+  previewImg.src = extractedUrl;
+
+  if (toggleBtn) {
+    toggleBtn.style.display = originalUrl !== extractedUrl ? 'inline-block' : 'none';
+    toggleBtn.textContent = 'Lihat Foto Asli';
+    toggleBtn.onclick = () => {
+      showingExtracted = !showingExtracted;
+      previewImg.src = showingExtracted ? extractedUrl : originalUrl;
+      toggleBtn.textContent = showingExtracted ? 'Lihat Foto Asli' : 'Lihat Hasil Potongan AI';
+    };
+  }
+  if (badgeEl) {
+    if (r.raw_image_url && r.raw_image_url !== r.raw_original_url) {
+      badgeEl.textContent = '✓ Background pakaian berhasil dihapus otomatis (SegFormer AI)';
+      badgeEl.style.display = 'block';
+    } else {
+      badgeEl.style.display = 'none';
+    }
+  }
 
   const conf = r.confidence_per_field || {};
   setConfidenceTag('badge-conf-cat', conf.category);

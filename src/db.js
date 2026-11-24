@@ -259,7 +259,7 @@ function initDatabase(dbPath = path.join(DB_DIR, 'weargoods.sqlite')) {
       usage_id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
       usage_date TEXT NOT NULL,
-      feature TEXT NOT NULL CHECK (feature IN ('recognize', 'outfit', 'mockup')),
+      feature TEXT NOT NULL CHECK (feature IN ('recognize', 'outfit', 'mockup', 'try_on')),
       count INTEGER NOT NULL DEFAULT 0,
       UNIQUE (user_id, usage_date, feature)
     );
@@ -269,6 +269,25 @@ function initDatabase(dbPath = path.join(DB_DIR, 'weargoods.sqlite')) {
   ensureColumn(db, 'users', 'nickname', 'TEXT NULL');
   ensureColumn(db, 'users', 'style_preferences', `TEXT NULL DEFAULT '["minimalist","smart_casual"]'`);
   ensureColumn(db, 'outfits', 'date_label', 'TEXT NULL');
+
+  try {
+    const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='ai_usage'").get()?.sql || '';
+    if (tableSql && !tableSql.includes('try_on')) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS ai_usage_v2 (
+          usage_id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+          usage_date TEXT NOT NULL,
+          feature TEXT NOT NULL CHECK (feature IN ('recognize', 'outfit', 'mockup', 'try_on')),
+          count INTEGER NOT NULL DEFAULT 0,
+          UNIQUE (user_id, usage_date, feature)
+        );
+        INSERT OR IGNORE INTO ai_usage_v2 SELECT * FROM ai_usage;
+        DROP TABLE ai_usage;
+        ALTER TABLE ai_usage_v2 RENAME TO ai_usage;
+      `);
+    }
+  } catch (_) {}
 
   // Seed Occasions (SRS Bagian 2.3 + UIUX Laras)
   const occasions = [

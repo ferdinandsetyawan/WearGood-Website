@@ -8,3 +8,7 @@ database/uploads/*.jpg
 database/uploads/*.jpeg
 database/uploads/*.png
 database/uploads/*.webp
+clothing_extractor/venv/
+clothing_extractor/__pycache__/
+__pycache__/
+*.pyc

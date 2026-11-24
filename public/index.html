@@ -2504,6 +2504,13 @@
               Ambil dari Kamera
             </button>
           </div>
+          <div class="mt-12 flex-center" style="gap: 8px; justify-content: center; flex-wrap: wrap;">
+            <label for="upload-photo-type-select" class="tiny-muted" style="font-weight: 500;">Jenis Foto:</label>
+            <select id="upload-photo-type-select" class="form-input" style="width: auto; padding: 4px 10px; font-size: 13px; height: 32px; border-radius: 6px;">
+              <option value="worn" selected>Sedang Dipakai (Model / Tubuh)</option>
+              <option value="flatlay">Gantungan / Datar (Flatlay)</option>
+            </select>
+          </div>
         </div>
 
         <!-- Camera Live Stream Container (FR-04) -->
@@ -2553,16 +2560,24 @@
             id="upload-preview-stage"
             class="upload-preview-stage mt-12 hidden"
           >
-            <div class="preview-img-box" id="upload-preview-img-box">
+            <div class="preview-img-box bg-checker" id="upload-preview-img-box">
               <img
                 src="/assets/item-1.png"
                 alt="Pratinjau foto pakaian"
                 id="upload-active-preview-img"
               />
             </div>
-            <div class="preview-meta-col">
-              <p class="meta-bold">Pratinjau foto pakaian</p>
-              <p class="tiny-muted mt-4" id="upload-exif-status">
+            <div class="preview-meta-col" style="flex: 1;">
+              <div class="flex-between" style="align-items: center;">
+                <p class="meta-bold">Pratinjau Foto Pakaian</p>
+                <button type="button" class="btn btn-outline btn-sm" id="btn-toggle-preview-mode" style="padding: 2px 8px; font-size: 11px;">
+                  Lihat Foto Asli
+                </button>
+              </div>
+              <p class="tiny-muted mt-4" id="upload-extractor-badge" style="color: #2e7d32; font-weight: 500;">
+                ✓ Background pakaian berhasil dihapus otomatis (SegFormer AI)
+              </p>
+              <p class="tiny-muted mt-2" id="upload-exif-status">
                 Metadata lokasi (EXIF &amp; GPS) dihapus otomatis saat disimpan.
               </p>
             </div>

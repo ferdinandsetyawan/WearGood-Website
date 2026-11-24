@@ -22,7 +22,8 @@ const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 const AI_QUOTA_LIMITS = {
   recognize: Number(process.env.AI_QUOTA_RECOGNIZE || 50),
   outfit: Number(process.env.AI_QUOTA_OUTFIT || 30),
-  mockup: Number(process.env.AI_QUOTA_MOCKUP || 100)
+  mockup: Number(process.env.AI_QUOTA_MOCKUP || 5),
+  try_on: Number(process.env.AI_QUOTA_TRY_ON || 20)
 };
 
 const passwordResetRate = new Map(); // key: email -> [timestamps]
@@ -394,7 +395,7 @@ function createAppServer(customDbPath, options = {}) {
   function getUserDailyUsage(userId) {
     const todayWib = getWibDateString();
     const rows = db.prepare('SELECT feature, count FROM ai_usage WHERE user_id = ? AND usage_date = ?').all(userId, todayWib);
-    const counts = { recognize: 0, outfit: 0, mockup: 0 };
+    const counts = { recognize: 0, outfit: 0, mockup: 0, try_on: 0 };
     for (const r of rows) {
       if (counts[r.feature] !== undefined) counts[r.feature] = r.count;
     }
@@ -416,6 +417,11 @@ function createAppServer(customDbPath, options = {}) {
           used: counts.mockup,
           limit: AI_QUOTA_LIMITS.mockup,
           remaining: Math.max(0, AI_QUOTA_LIMITS.mockup - counts.mockup)
+        },
+        try_on: {
+          used: counts.try_on,
+          limit: AI_QUOTA_LIMITS.try_on,
+          remaining: Math.max(0, AI_QUOTA_LIMITS.try_on - counts.try_on)
         }
       }
     };
@@ -1309,10 +1315,12 @@ function createAppServer(customDbPath, options = {}) {
         let mimeType = 'image/jpeg';
         let hintText = '';
         let declaredRawSize = 0;
+        let parsed = null;
+        let body = null;
 
         if (contentType.includes('multipart/form-data')) {
           const rawBuf = await readBodyBuffer(req);
-          const parsed = parseMultipartFormData(rawBuf, contentType);
+          parsed = parseMultipartFormData(rawBuf, contentType);
           hintText = parsed.fields.hint || parsed.fields.name || '';
           declaredRawSize = Number(parsed.fields.raw_size_bytes || 0);
           if (parsed.files.length === 0) {
@@ -1323,7 +1331,7 @@ function createAppServer(customDbPath, options = {}) {
           filename = f.filename || 'upload.jpg';
           mimeType = f.contentType || 'image/jpeg';
         } else {
-          const body = await parseJsonBody(req);
+          body = await parseJsonBody(req);
           filename = String(body.filename || 'upload.jpg');
           mimeType = String(body.mime_type || 'image/jpeg');
           hintText = String(body.hint || body.name || '');
@@ -1399,18 +1407,24 @@ function createAppServer(customDbPath, options = {}) {
               const form = new FormData();
               form.append('file', new Blob([cleanBuffer], { type: magicCheck.format === 'png' ? 'image/png' : magicCheck.format === 'webp' ? 'image/webp' : 'image/jpeg' }), filename);
 
-              const extractResponse = await fetch(`${extractorUrl}?photo_type=flatlay`, {
+              const requestedPhotoType = req.headers['x-photo-type'] ||
+                (parsed && parsed.fields && parsed.fields.photo_type) ||
+                (body && body.photo_type) ||
+                'worn';
+              const extractResponse = await fetch(`${extractorUrl}?photo_type=${encodeURIComponent(requestedPhotoType)}`, {
                 method: 'POST',
                 body: form
               });
 
-              if (!extractResponse.ok) {
-                throw new Error(`Ekstraksi gagal (${extractResponse.status}).`);
+              if (extractResponse.ok) {
+                const extractedBuffer = Buffer.from(await extractResponse.arrayBuffer());
+                if (extractedBuffer.length > 500) {
+                  fs.writeFileSync(extractedPath, extractedBuffer);
+                  rawImageUrl = `/uploads/${extractedFileId}`;
+                }
+              } else {
+                console.warn(`[WearGoods] Ekstraksi HTTP ${extractResponse.status}; menggunakan foto asli.`);
               }
-
-              const extractedBuffer = Buffer.from(await extractResponse.arrayBuffer());
-              fs.writeFileSync(extractedPath, extractedBuffer);
-              rawImageUrl = `/uploads/${extractedFileId}`;
             } catch (extractErr) {
               console.warn(`[WearGoods] Ekstraksi upload dilewati (${extractErr.message}); menggunakan foto asli.`);
             }
@@ -1478,7 +1492,7 @@ function createAppServer(customDbPath, options = {}) {
           return sendError(res, magicCheck.status, 'UNSUPPORTED_MEDIA_TYPE', magicCheck.message);
         }
 
-        const quota = consumeAiQuota(user.user_id, 'mockup');
+        const quota = consumeAiQuota(user.user_id, 'try_on');
         if (!quota.allowed) {
           return sendJson(res, 429, {
             error: {
@@ -1518,7 +1532,7 @@ function createAppServer(customDbPath, options = {}) {
           }
 
           if (garmentImages.length === 0) {
-            refundAiQuota(user.user_id, 'mockup');
+            refundAiQuota(user.user_id, 'try_on');
             return sendError(res, 422, 'GARMENT_IMAGE_MISSING', 'Foto pakaian pada outfit ini belum tersedia untuk virtual try-on.');
           }
 
@@ -1534,7 +1548,7 @@ function createAppServer(customDbPath, options = {}) {
               uploadsDir: UPLOADS_DIR
             });
           } catch (hfErr) {
-            refundAiQuota(user.user_id, 'mockup');
+            refundAiQuota(user.user_id, 'try_on');
             const hfMessage = String(hfErr.message || 'Hugging Face IDM-VTON gagal diproses.');
             const quotaExceeded = /zerogpu|quota|rate limit/i.test(hfMessage);
             return sendError(
@@ -1548,7 +1562,7 @@ function createAppServer(customDbPath, options = {}) {
           }
 
           if (!tryOnUrl) {
-            refundAiQuota(user.user_id, 'mockup');
+            refundAiQuota(user.user_id, 'try_on');
             return sendError(res, 502, 'AI_TRY_ON_FAILED', 'Virtual try-on gagal diproses. Silakan coba lagi dengan foto yang lebih jelas.');
           }
 
@@ -1558,7 +1572,7 @@ function createAppServer(customDbPath, options = {}) {
             quota_remaining: quota.limit - quota.used
           });
         } catch (tryOnErr) {
-          refundAiQuota(user.user_id, 'mockup');
+          refundAiQuota(user.user_id, 'try_on');
           return sendError(res, tryOnErr.status || 502, tryOnErr.code || 'AI_TRY_ON_FAILED', tryOnErr.message || 'Gagal membuat virtual try-on.');
         }
       }
@@ -1605,14 +1619,18 @@ function createAppServer(customDbPath, options = {}) {
             : 'smart_casual'
         };
 
-        const realRawImage = String(body.raw_image_url || '').split('?')[0];
-        if (!realRawImage.startsWith('/uploads/')) {
-          return sendError(res, 400, 'EXTRACTED_IMAGE_REQUIRED', 'Foto pakaian hasil ekstraksi belum tersedia. Unggah foto ulang dan tunggu pemrosesan selesai.');
-        }
-
-        const cleanImg = realRawImage;
-        const cleanOrig = String(body.raw_original_url || body.original_image_url || realRawImage).split('?')[0];
-        const cleanThumb = String(body.thumbnail_url || realRawImage).split('?')[0];
+        const defaultAssetByCat = {
+          top: '/assets/item-1.png',
+          bottom: '/assets/item-2.png',
+          footwear: '/assets/item-3.png',
+          accessory: '/assets/item-4.png',
+          outerwear: '/assets/mockup-outerwear.svg',
+          one_piece: '/assets/mockup-one_piece.svg'
+        };
+        const rawGiven = String(body.raw_image_url || body.image_url || '').split('?')[0];
+        const cleanImg = rawGiven || defaultAssetByCat[category] || '/assets/item-1.png';
+        const cleanOrig = String(body.raw_original_url || body.original_image_url || cleanImg).split('?')[0];
+        const cleanThumb = String(body.thumbnail_url || cleanImg).split('?')[0];
 
         const now = new Date().toISOString();
         const itemId = crypto.randomUUID();
@@ -1700,18 +1718,18 @@ function createAppServer(customDbPath, options = {}) {
               ? (entry.characteristics?.formality || entry.formality)
               : 'smart_casual'
           };
-          const realRawImage = String(entry.raw_image_url || '').split('?')[0];
-          if (!realRawImage.startsWith('/uploads/')) {
-            failedItems.push({
-              index,
-              filename: entry.filename || `Foto #${index + 1}`,
-              reason: 'Foto hasil ekstraksi belum tersedia. Unggah foto ulang dan tunggu pemrosesan selesai.'
-            });
-            return;
-          }
-          const cleanImg = realRawImage;
-          const cleanOrig = String(entry.raw_original_url || entry.original_image_url || realRawImage).split('?')[0];
-          const cleanThumb = String(entry.thumbnail_url || realRawImage).split('?')[0];
+          const defaultAssetByCat = {
+            top: '/assets/item-1.png',
+            bottom: '/assets/item-2.png',
+            footwear: '/assets/item-3.png',
+            accessory: '/assets/item-4.png',
+            outerwear: '/assets/mockup-outerwear.svg',
+            one_piece: '/assets/mockup-one_piece.svg'
+          };
+          const rawGiven = String(entry.raw_image_url || entry.image_url || '').split('?')[0];
+          const cleanImg = rawGiven || defaultAssetByCat[category] || '/assets/item-1.png';
+          const cleanOrig = String(entry.raw_original_url || entry.original_image_url || cleanImg).split('?')[0];
+          const cleanThumb = String(entry.thumbnail_url || cleanImg).split('?')[0];
 
           insertStmt.run(
             itemId,

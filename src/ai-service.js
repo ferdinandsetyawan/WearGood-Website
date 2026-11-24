@@ -640,79 +640,88 @@ function createAiService(options = {}) {
   async function generateHfTryOnImage({ personBuffer, personMimeType, garmentImages, tryOnId, uploadsDir }) {
     if (!personBuffer || !uploadsDir || !garmentImages?.length) return null;
 
-    try {
-      const { Client } = await import('@gradio/client');
-      const spaceName = String(process.env.HF_VTON_SPACE || 'yisol/IDM-VTON').trim();
-      const hfToken = String(process.env.HF_TOKEN || '').trim();
-      const client = await Client.connect(
-        spaceName,
-        hfToken ? { token: hfToken } : undefined
-      );
-
-      const tempDir = path.join(uploadsDir, '..', 'tmp');
-      fs.mkdirSync(tempDir, { recursive: true });
-      const personExt = personMimeType === 'image/png' ? '.png' : personMimeType === 'image/webp' ? '.webp' : '.jpg';
-      const garment = garmentImages.find((item) => item.category === 'top' || item.category === 'one_piece')
-        || garmentImages.find((item) => /shirt|kaos|kemeja|top|baju/i.test(item.name))
-        || garmentImages[0];
-      const garmentExt = garment.mimeType === 'image/png' ? '.png' : garment.mimeType === 'image/webp' ? '.webp' : '.jpg';
-      const garmentBuffer = garment.buffer;
-
-      const personPath = path.join(tempDir, `hf-person-${tryOnId}${personExt}`);
-      const garmentPath = path.join(tempDir, `hf-garment-${tryOnId}${garment.mimeType === 'image/png' ? '.png' : garment.mimeType === 'image/webp' ? '.webp' : '.jpg'}`);
-      fs.writeFileSync(personPath, personBuffer);
-      fs.writeFileSync(garmentPath, garmentBuffer);
-
+    let lastError = null;
+    for (let attempt = 1; attempt <= 2; attempt++) {
       try {
-        const personBlob = new Blob([personBuffer], { type: personMimeType });
-        const garmentBlob = new Blob([garmentBuffer], {
-          type: garment.mimeType === 'image/png' || garment.mimeType === 'image/webp' || garment.mimeType === 'image/jpeg'
-            ? garment.mimeType
-            : 'image/jpeg'
-        });
-        const result = await withTimeout(
-          client.predict('/tryon', [
-            { background: personBlob, layers: [], composite: null },
-            garmentBlob,
-            garment.name || 'Fashion garment',
-            true,
-            false,
-            30,
-            42
-          ]),
-          Number(process.env.HF_TIMEOUT_MS || 180000),
-          'Hugging Face IDM-VTON melewati batas waktu.'
+        const { Client } = await import('@gradio/client');
+        const spaceName = String(process.env.HF_VTON_SPACE || 'yisol/IDM-VTON').trim();
+        const hfToken = String(process.env.HF_TOKEN || '').trim();
+        const client = await Client.connect(
+          spaceName,
+          hfToken ? { token: hfToken } : undefined
         );
 
-        const output = result?.data?.[0];
-        let outputBuffer = null;
-        if (typeof output === 'string' && /^https?:\/\//.test(output)) {
-          const response = await fetch(output);
-          if (!response.ok) throw new Error(`Unduhan hasil IDM-VTON gagal (${response.status}).`);
-          outputBuffer = Buffer.from(await response.arrayBuffer());
-        } else if (output?.url) {
-          const response = await fetch(output.url);
-          if (!response.ok) throw new Error(`Unduhan hasil IDM-VTON gagal (${response.status}).`);
-          outputBuffer = Buffer.from(await response.arrayBuffer());
-        } else if (output?.path && fs.existsSync(output.path)) {
-          outputBuffer = fs.readFileSync(output.path);
+        const tempDir = path.join(uploadsDir, '..', 'tmp');
+        fs.mkdirSync(tempDir, { recursive: true });
+        const personExt = personMimeType === 'image/png' ? '.png' : personMimeType === 'image/webp' ? '.webp' : '.jpg';
+        const garment = garmentImages.find((item) => item.category === 'top' || item.category === 'one_piece')
+          || garmentImages.find((item) => /shirt|kaos|kemeja|top|baju/i.test(item.name))
+          || garmentImages[0];
+        const garmentExt = garment.mimeType === 'image/png' ? '.png' : garment.mimeType === 'image/webp' ? '.webp' : '.jpg';
+        const garmentBuffer = garment.buffer;
+
+        const personPath = path.join(tempDir, `hf-person-${tryOnId}${personExt}`);
+        const garmentPath = path.join(tempDir, `hf-garment-${tryOnId}${garmentExt}`);
+        fs.writeFileSync(personPath, personBuffer);
+        fs.writeFileSync(garmentPath, garmentBuffer);
+
+        try {
+          const personBlob = new Blob([personBuffer], { type: personMimeType });
+          const garmentBlob = new Blob([garmentBuffer], {
+            type: garment.mimeType === 'image/png' || garment.mimeType === 'image/webp' || garment.mimeType === 'image/jpeg'
+              ? garment.mimeType
+              : 'image/jpeg'
+          });
+          const result = await withTimeout(
+            client.predict('/tryon', [
+              { background: personBlob, layers: [], composite: null },
+              garmentBlob,
+              garment.name || 'Fashion garment',
+              true,
+              false,
+              30,
+              42
+            ]),
+            Number(process.env.HF_TIMEOUT_MS || 180000),
+            'Hugging Face IDM-VTON melewati batas waktu.'
+          );
+
+          const output = result?.data?.[0];
+          let outputBuffer = null;
+          if (typeof output === 'string' && /^https?:\/\//.test(output)) {
+            const response = await fetch(output);
+            if (!response.ok) throw new Error(`Unduhan hasil IDM-VTON gagal (${response.status}).`);
+            outputBuffer = Buffer.from(await response.arrayBuffer());
+          } else if (output?.url) {
+            const response = await fetch(output.url);
+            if (!response.ok) throw new Error(`Unduhan hasil IDM-VTON gagal (${response.status}).`);
+            outputBuffer = Buffer.from(await response.arrayBuffer());
+          } else if (output?.path && fs.existsSync(output.path)) {
+            outputBuffer = fs.readFileSync(output.path);
+          }
+
+          if (!outputBuffer) return null;
+
+          const fileName = `tryon-hf-${tryOnId}.png`;
+          fs.writeFileSync(path.join(uploadsDir, fileName), outputBuffer);
+          return `/uploads/${fileName}`;
+        } finally {
+          fs.rmSync(personPath, { force: true });
+          fs.rmSync(garmentPath, { force: true });
         }
-
-        if (!outputBuffer) return null;
-
-        const fileName = `tryon-hf-${tryOnId}.png`;
-        fs.writeFileSync(path.join(uploadsDir, fileName), outputBuffer);
-        return `/uploads/${fileName}`;
-      } finally {
-        fs.rmSync(personPath, { force: true });
-        fs.rmSync(garmentPath, { force: true });
+      } catch (err) {
+        lastError = err;
+        console.warn(`[WearGoods AI] IDM-VTON percobaan ke-${attempt} gagal: ${err.message}`);
+        if (attempt < 2) {
+          await new Promise((r) => setTimeout(r, 2000));
+        }
       }
-    } catch (err) {
-      const hfError = new Error(`IDM-VTON Hugging Face gagal: ${err.message}`);
-      hfError.status = err.status || 502;
-      hfError.code = 'HF_TRY_ON_FAILED';
-      throw hfError;
     }
+
+    const hfError = new Error(`IDM-VTON Hugging Face gagal: ${lastError?.message || 'Koneksi terputus'}`);
+    hfError.status = lastError?.status || 502;
+    hfError.code = 'HF_TRY_ON_FAILED';
+    throw hfError;
   }
 
   async function generateTryOnImage({ personBuffer, personMimeType, garmentImages, tryOnId, uploadsDir }) {
