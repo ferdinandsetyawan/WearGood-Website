@@ -348,6 +348,11 @@ function runAiClothingRecognition(filename = '', hintText = '') {
     low_confidence_fields: lowConfidenceFields,
     box_2d: [80, 100, 920, 900],
     crop_box: { ymin: 80, xmin: 100, ymax: 920, xmax: 900 },
+    polygon: [
+      [400, 80], [600, 80], [700, 160], [880, 300], [800, 420],
+      [730, 360], [720, 900], [280, 900], [270, 360], [200, 420],
+      [120, 300], [300, 160], [400, 80]
+    ],
     background_removed: bgRemovedSuccess,
     preprocessing_notice: bgRemovedSuccess
       ? 'Latar belakang berhasil dihapus dan ukuran gambar dinormalkan.'

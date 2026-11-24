@@ -1762,21 +1762,24 @@ function bindWardrobeEvents() {
     const statusBadge = document.getElementById('crop-status-badge');
     const cropModeLabel = document.getElementById('btn-crop-mode-label');
     const cropModeIcon = document.getElementById('btn-crop-mode-icon');
+    const box = document.getElementById('upload-preview-img-box');
 
     if (entry.activePreviewMode === 'cutout' && entry.croppedDataUrl) {
       previewImg.src = entry.croppedDataUrl;
       toggleBtn?.classList.add('active');
+      box?.classList.add('bg-checker');
       if (statusBadge) statusBadge.textContent = 'Fokus Pakaian & Cutout Aktif';
       if (cropModeLabel) cropModeLabel.textContent = 'Mode: AI Cutout (Aktif)';
       if (cropModeIcon) cropModeIcon.textContent = '✂️';
-      showFloatingToast('Mode: AI Cutout (Fokus pakaian aktif).');
+      showFloatingToast('Mode: AI Cutout (Latar belakang dihapus, menyisakan pakaian).');
     } else {
       previewImg.src = entry.localPreviewUrl || entry.recognized?.image_url || '/assets/item-1.png';
       toggleBtn?.classList.remove('active');
+      box?.classList.remove('bg-checker');
       if (statusBadge) statusBadge.textContent = 'Foto Asli (Tanpa Cutout)';
       if (cropModeLabel) cropModeLabel.textContent = 'Mode: Foto Asli';
       if (cropModeIcon) cropModeIcon.textContent = '📷';
-      showFloatingToast('Mode: Foto Asli (Tanpa pemotongan).');
+      showFloatingToast('Mode: Foto Asli (Tanpa pemotongan latar).');
     }
     renderBatchQueueList();
   });
@@ -2026,9 +2029,9 @@ function arrayBufferToBase64(buffer) {
 }
 
 // --------------------------------------------------------------------------
-// AI Garment Extraction: Smart Bounding Box Crop & Background Cutout
+// AI Garment Extraction: True Polygon Contour Silhouette & Background Erase
 // --------------------------------------------------------------------------
-async function processAiGarmentCropAndCutout(imageSrc, box2d) {
+async function processAiGarmentCropAndCutout(imageSrc, box2d, polygon) {
   return new Promise((resolve) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
@@ -2038,104 +2041,112 @@ async function processAiGarmentCropAndCutout(imageSrc, box2d) {
         const nh = img.naturalHeight || img.height;
         if (!nw || !nh) return resolve(null);
 
-        // Normalize box_2d [ymin, xmin, ymax, xmax] (0..1000 scale)
+        // 1. Normalize box_2d [ymin, xmin, ymax, xmax] (0..1000 scale)
         let [ymin, xmin, ymax, xmax] = Array.isArray(box2d) && box2d.length === 4
           ? box2d
           : [80, 100, 920, 900];
 
-        ymin = Math.max(0, Math.min(1000, ymin));
-        xmin = Math.max(0, Math.min(1000, xmin));
-        ymax = Math.max(ymin + 50, Math.min(1000, ymax));
-        xmax = Math.max(xmin + 50, Math.min(1000, xmax));
+        ymin = Math.max(0, Math.min(1000, Number(ymin) || 0));
+        xmin = Math.max(0, Math.min(1000, Number(xmin) || 0));
+        ymax = Math.max(ymin + 50, Math.min(1000, Number(ymax) || 1000));
+        xmax = Math.max(xmin + 50, Math.min(1000, Number(xmax) || 1000));
 
-        // Add 3.5% padding around garment
-        const boxH = ymax - ymin;
-        const boxW = xmax - xmin;
-        const padY = boxH * 0.035;
-        const padX = boxW * 0.035;
+        // 2. Validate & normalize polygon contour points (0..1000 scale)
+        let validPoly = [];
+        if (Array.isArray(polygon) && polygon.length >= 3) {
+          validPoly = polygon
+            .filter((pt) => Array.isArray(pt) && pt.length >= 2)
+            .map(([x, y]) => [
+              Math.max(0, Math.min(1000, Number(x) || 0)),
+              Math.max(0, Math.min(1000, Number(y) || 0))
+            ]);
+        }
 
-        const cropY = Math.max(0, ((ymin - padY) / 1000) * nh);
-        const cropX = Math.max(0, ((xmin - padX) / 1000) * nw);
-        const cropH = Math.min(nh - cropY, ((boxH + padY * 2) / 1000) * nh);
-        const cropW = Math.min(nw - cropX, ((boxW + padX * 2) / 1000) * nw);
+        // Fallback polygon if AI provided no contour
+        if (validPoly.length < 3) {
+          validPoly = [
+            [Math.round((xmin + xmax) / 2), ymin],
+            [xmax, Math.round(ymin + (ymax - ymin) * 0.22)],
+            [xmax, ymax],
+            [xmin, ymax],
+            [xmin, Math.round(ymin + (ymax - ymin) * 0.22)]
+          ];
+        }
 
+        // 3. Compute tight bounding limits of the clothing silhouette
+        const polyXs = validPoly.map((p) => p[0]);
+        const polyYs = validPoly.map((p) => p[1]);
+        let minX = Math.min(...polyXs);
+        let maxX = Math.max(...polyXs);
+        let minY = Math.min(...polyYs);
+        let maxY = Math.max(...polyYs);
+
+        // Add 2.5% padding so garment borders don't touch canvas edges tightly
+        const garmentW = Math.max(40, maxX - minX);
+        const garmentH = Math.max(40, maxY - minY);
+        const padX = garmentW * 0.025;
+        const padY = garmentH * 0.025;
+
+        const cropMinX = Math.max(0, minX - padX);
+        const cropMaxX = Math.min(1000, maxX + padX);
+        const cropMinY = Math.max(0, minY - padY);
+        const cropMaxY = Math.min(1000, maxY + padY);
+
+        const effectiveW = Math.max(1, cropMaxX - cropMinX);
+        const effectiveH = Math.max(1, cropMaxY - cropMinY);
+
+        const cropX = Math.max(0, (cropMinX / 1000) * nw);
+        const cropY = Math.max(0, (cropMinY / 1000) * nh);
+        const cropW = Math.min(nw - cropX, (effectiveW / 1000) * nw);
+        const cropH = Math.min(nh - cropY, (effectiveH / 1000) * nh);
+
+        // 4. Render onto a clean square canvas with 100% transparent background
         const targetSide = 720;
         const canvas = document.createElement('canvas');
         canvas.width = targetSide;
         canvas.height = targetSide;
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
-        const scale = Math.min((targetSide * 0.94) / cropW, (targetSide * 0.94) / cropH);
+        // Maintain aspect ratio, center garment inside 92% of target canvas
+        const scale = Math.min((targetSide * 0.92) / cropW, (targetSide * 0.92) / cropH);
         const destW = Math.round(cropW * scale);
         const destH = Math.round(cropH * scale);
         const destX = Math.round((targetSide - destW) / 2);
         const destY = Math.round((targetSide - destH) / 2);
 
+        // Ensure canvas starts completely transparent (alpha = 0)
         ctx.clearRect(0, 0, targetSide, targetSide);
-        ctx.drawImage(img, cropX, cropY, cropW, cropH, destX, destY, destW, destH);
 
-        // Smart Edge-Aware Background Cutout
-        const imgData = ctx.getImageData(0, 0, targetSide, targetSide);
-        const data = imgData.data;
-
-        const samplePoints = [
-          [destX + 2, destY + 2],
-          [destX + destW - 3, destY + 2],
-          [destX + 2, destY + destH - 3],
-          [destX + destW - 3, destY + destH - 3],
-          [Math.round(targetSide / 2), destY + 2],
-          [destX + 2, Math.round(targetSide / 2)],
-          [destX + destW - 3, Math.round(targetSide / 2)]
-        ];
-
-        let totalR = 0, totalG = 0, totalB = 0, count = 0;
-        samplePoints.forEach(([sx, sy]) => {
-          if (sx >= 0 && sx < targetSide && sy >= 0 && sy < targetSide) {
-            const idx = (sy * targetSide + sx) * 4;
-            if (data[idx + 3] > 100) {
-              totalR += data[idx];
-              totalG += data[idx + 1];
-              totalB += data[idx + 2];
-              count++;
-            }
+        // 5. Apply Vector Contour Clip: EVERYTHING outside the clothing fabric becomes 100% transparent!
+        ctx.save();
+        ctx.beginPath();
+        validPoly.forEach(([px, py], idx) => {
+          const normX = (px - cropMinX) / effectiveW;
+          const normY = (py - cropMinY) / effectiveH;
+          const canvasX = destX + (normX * destW);
+          const canvasY = destY + (normY * destH);
+          if (idx === 0) {
+            ctx.moveTo(canvasX, canvasY);
+          } else {
+            ctx.lineTo(canvasX, canvasY);
           }
         });
+        ctx.closePath();
+        ctx.clip();
 
-        if (count > 0) {
-          const bgR = totalR / count;
-          const bgG = totalG / count;
-          const bgB = totalB / count;
+        // Draw only the clothing pixels within the clipped silhouette
+        ctx.drawImage(img, cropX, cropY, cropW, cropH, destX, destY, destW, destH);
+        ctx.restore();
 
-          const colorThreshold = 46;
-          const featherRange = 26;
-
-          for (let y = 0; y < targetSide; y++) {
-            for (let x = 0; x < targetSide; x++) {
-              const i = (y * targetSide + x) * 4;
-              if (data[i + 3] === 0) continue;
-
-              const dx = (x - targetSide / 2) / (targetSide / 2);
-              const dy = (y - targetSide / 2) / (targetSide / 2);
-              const distFromCenter = Math.sqrt(dx * dx + dy * dy);
-
-              const dr = data[i] - bgR;
-              const dg = data[i + 1] - bgG;
-              const db = data[i + 2] - bgB;
-              const colorDist = Math.sqrt(dr * dr * 0.299 + dg * dg * 0.587 + db * db * 0.114);
-
-              if (colorDist < colorThreshold && distFromCenter > 0.42) {
-                const alphaFactor = Math.max(0, (colorDist - (colorThreshold - featherRange)) / featherRange);
-                data[i + 3] = Math.round(data[i + 3] * alphaFactor);
-              }
-            }
-          }
-          ctx.putImageData(imgData, 0, 0);
-        }
-
-        const dataUrl = canvas.toDataURL('image/png', 0.92);
-        resolve({ dataUrl, cropBox: { ymin, xmin, ymax, xmax } });
+        // Export as transparent PNG
+        const dataUrl = canvas.toDataURL('image/png', 0.95);
+        resolve({
+          dataUrl,
+          cropBox: { ymin: cropMinY, xmin: cropMinX, ymax: cropMaxY, xmax: cropMaxX },
+          polygon: validPoly
+        });
       } catch (err) {
-        console.warn('[AI Garment Extraction] Gagal memproses canvas:', err);
+        console.warn('[AI Garment Extraction] Gagal memproses canvas cutout:', err);
         resolve(null);
       }
     };
@@ -2194,7 +2205,11 @@ async function handleSelectedClothingFiles(files) {
         entry.recognized = res.recognized;
         if (entry.localPreviewUrl && res.recognized) {
           try {
-            const extraction = await processAiGarmentCropAndCutout(entry.localPreviewUrl, res.recognized.box_2d);
+            const extraction = await processAiGarmentCropAndCutout(
+              entry.localPreviewUrl,
+              res.recognized.box_2d,
+              res.recognized.polygon
+            );
             if (extraction) {
               entry.croppedDataUrl = extraction.dataUrl;
               entry.activePreviewMode = 'cutout';
@@ -2323,15 +2338,18 @@ function selectBatchQueueItem(idx) {
 
   function updateGarmentPreviewDisplay() {
     const isCutout = entry.activePreviewMode === 'cutout' && entry.croppedDataUrl;
+    const box = document.getElementById('upload-preview-img-box');
     if (isCutout) {
       previewImg.src = entry.croppedDataUrl;
       toggleBtn?.classList.add('active');
+      box?.classList.add('bg-checker');
       if (statusBadge) statusBadge.textContent = 'Fokus Pakaian & Cutout Aktif';
       if (cropModeLabel) cropModeLabel.textContent = 'Mode: AI Cutout (Aktif)';
       if (cropModeIcon) cropModeIcon.textContent = '✂️';
     } else {
       previewImg.src = entry.localPreviewUrl || r.image_url || '/assets/item-1.png';
       toggleBtn?.classList.remove('active');
+      box?.classList.remove('bg-checker');
       if (statusBadge) statusBadge.textContent = 'Foto Asli (Tanpa Cutout)';
       if (cropModeLabel) cropModeLabel.textContent = 'Mode: Foto Asli';
       if (cropModeIcon) cropModeIcon.textContent = '📷';
@@ -2339,7 +2357,7 @@ function selectBatchQueueItem(idx) {
   }
 
   if (!entry.croppedDataUrl && (entry.localPreviewUrl || r.image_url)) {
-    processAiGarmentCropAndCutout(entry.localPreviewUrl || r.image_url, r.box_2d).then((res) => {
+    processAiGarmentCropAndCutout(entry.localPreviewUrl || r.image_url, r.box_2d, r.polygon).then((res) => {
       if (res && res.dataUrl) {
         entry.croppedDataUrl = res.dataUrl;
         entry.activePreviewMode = 'cutout';

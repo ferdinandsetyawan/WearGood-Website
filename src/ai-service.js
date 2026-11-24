@@ -254,6 +254,14 @@ function createAiService(options = {}) {
           description: 'Koordinat bounding box [ymin, xmin, ymax, xmax] skala 0-1000 yang melingkupi objek pakaian utama.',
           items: { type: 'integer' }
         },
+        polygon: {
+          type: 'array',
+          description: 'Daftar koordinat poligon [ [x, y], ... ] skala 0-1000 yang menjiplak tepian terluar dari HANYA kain pakaian (silhouette contour).',
+          items: {
+            type: 'array',
+            items: { type: 'integer' }
+          }
+        },
         confidence_category: { type: 'number' },
         confidence_sub_category: { type: 'number' },
         confidence_primary_color: { type: 'number' },
@@ -284,7 +292,8 @@ function createAiService(options = {}) {
       '5. Gunakan istilah Bahasa Indonesia yang natural untuk `sub_category` (contoh: "Kemeja Linen", "Celana Tailored", "Loafers Kulit"), `pattern` (contoh: "Polos", "Kotak-kotak", "Garis-garis"), `fit` (contoh: "Regular fit", "Relaxed fit", "Slim fit"), dan `material` (contoh: "Katun", "Linen", "Denim", "Kulit").',
       `6. Tentukan \`formality\` tepat ke: ${VALID_FORMALITIES.join(', ')}.`,
       '7. Isi skor keyakinan 0.0 sampai 1.0 untuk tiap field (`confidence_*`). Turunkan skor di bawah 0.6 jika pencahayaan atau sudut foto membuat bagian tersebut meragukan.',
-      '8. Berikan koordinat `box_2d` [ymin, xmin, ymax, xmax] skala 0-1000 yang melingkupi objek pakaian utama dalam gambar (abaikan kepala model, gantungan, atau latar ruangan).',
+      '8. Berikan koordinat `box_2d` [ymin, xmin, ymax, xmax] skala 0-1000 yang melingkupi objek pakaian utama dalam gambar.',
+      '9. Berikan koordinat `polygon` [ [x, y], [x, y], ... ] tertutup (skala 0-1000) yang menjiplak tepian terluar dari HANYA kain pakaian (silhouette contour yang memotong habis latar belakang, tubuh model, gantungan, dll).',
       hintText ? `Petunjuk opsional nama file/catatan: "${String(hintText).slice(0, 120)}" (${path.basename(String(filename || ''))}).` : ''
     ]
       .filter(Boolean)
@@ -375,6 +384,26 @@ function createAiService(options = {}) {
       if (box2d[3] <= box2d[1]) box2d[3] = Math.min(1000, box2d[1] + 500);
     }
 
+    let polygon = null;
+    if (Array.isArray(parsed.polygon) && parsed.polygon.length >= 3) {
+      polygon = parsed.polygon
+        .filter((pt) => Array.isArray(pt) && pt.length >= 2)
+        .map(([x, y]) => [
+          Math.max(0, Math.min(1000, Math.round(Number(x) || 0))),
+          Math.max(0, Math.min(1000, Math.round(Number(y) || 0)))
+        ]);
+    }
+    if (!polygon || polygon.length < 3) {
+      polygon = [
+        [Math.round((box2d[1] + box2d[3]) / 2), box2d[0]],
+        [box2d[3], Math.round(box2d[0] + (box2d[2] - box2d[0]) * 0.25)],
+        [box2d[3], box2d[2]],
+        [box2d[1], box2d[2]],
+        [box2d[1], Math.round(box2d[0] + (box2d[2] - box2d[0]) * 0.25)],
+        [Math.round((box2d[1] + box2d[3]) / 2), box2d[0]]
+      ];
+    }
+
     return {
       name: `${subCategory} ${primaryColor.toLowerCase()}`,
       category,
@@ -392,6 +421,7 @@ function createAiService(options = {}) {
       needs_review: lowConfidenceFields.length > 0,
       low_confidence_fields: lowConfidenceFields,
       box_2d: box2d,
+      polygon,
       crop_box: {
         ymin: box2d[0],
         xmin: box2d[1],
