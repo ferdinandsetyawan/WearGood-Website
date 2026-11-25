@@ -283,6 +283,44 @@ async function runAiTests() {
       assert.deepEqual(resOk.selectedItems.map((x) => x.item_id), ['top-1', 'bot-1', 'foot-1']);
       assert.equal(resOk.title, 'Rapi bernapas lega.');
 
+      const svcSingleItem = createAiService({
+        apiKey: 'fake-key',
+        client: {
+          interactions: {
+            async create() {
+              return {
+                output_text: JSON.stringify({
+                  selected_item_ids: ['top-1'],
+                  title: 'Ringkas dan rapi.',
+                  ai_reasoning: 'Kemeja linen putih menjadi pilihan yang ringan untuk agenda ini.',
+                  styling_note: 'Rapikan bagian lengan agar terlihat lebih terstruktur.'
+                })
+              };
+            }
+          }
+        }
+      });
+      const singleTopOutfit = await svcSingleItem.generateOutfit({
+        activeItems: [sampleWardrobe[0]]
+      });
+      assert.deepEqual(singleTopOutfit.selectedItems.map((x) => x.item_id), ['top-1']);
+
+      const svcTimeout = createAiService({
+        apiKey: 'fake-key',
+        outfitTimeoutMs: 50,
+        client: {
+          interactions: {
+            create() {
+              return new Promise(() => {});
+            }
+          }
+        }
+      });
+      await assert.rejects(
+        () => svcTimeout.generateOutfit({ activeItems: sampleWardrobe }),
+        (err) => err.status === 504 && err.code === 'AI_TIMEOUT'
+      );
+
       // Reject when locked item is omitted
       const missingLock = await svcOk.generateOutfit({
         activeItems: sampleWardrobe,
@@ -320,7 +358,7 @@ async function runAiTests() {
             async create() {
               return {
                 output_text: JSON.stringify({
-                  selected_item_ids: ['top-1', 'fake-bottom-id'],
+                  selected_item_ids: ['fake-top-id', 'fake-bottom-id'],
                   title: 'Halusinasi',
                   ai_reasoning: 'Test',
                   styling_note: 'Test'
@@ -339,6 +377,7 @@ async function runAiTests() {
       const tmpDir = path.join(os.tmpdir(), `weargoods-img-${Date.now()}`);
       const svc = createAiService({
         apiKey: 'fake-key',
+        imageGenerationEnabled: true,
         client: {
           interactions: {
             async create(params) {
@@ -384,6 +423,23 @@ async function runAiTests() {
         assert.equal(imageCallParams.response_format.type, 'image');
         const written = fs.readFileSync(path.join(tmpDir, 'mockup-unit-001.png'));
         assert.equal(written.toString('base64'), TINY_PNG_BASE64);
+
+        const tryOnUrl = await svc.generateTryOnImage({
+          personBuffer: Buffer.from('person-photo'),
+          personMimeType: 'image/jpeg',
+          garmentImages: [
+            { buffer: Buffer.from('black-shirt'), mimeType: 'image/jpeg', category: 'top', name: 'Baju Hitam' },
+            { buffer: Buffer.from('blue-jeans'), mimeType: 'image/jpeg', category: 'bottom', name: 'Celana Denim' },
+            { buffer: Buffer.from('sneakers'), mimeType: 'image/jpeg', category: 'footwear', name: 'Sneakers' }
+          ],
+          tryOnId: 'full-outfit-unit-001',
+          uploadsDir: tmpDir
+        });
+        assert.equal(tryOnUrl, '/uploads/tryon-full-outfit-unit-001.png');
+        const tryOnContent = imageCallParams.input[0].content;
+        assert.equal(tryOnContent.filter((content) => content.type === 'image').length, 3);
+        assert.match(tryOnContent[0].text, /selected bottoms on the lower body/);
+        assert.equal(fs.existsSync(path.join(tmpDir, 'tryon-full-outfit-unit-001.png')), true);
 
         const svcImgFail = createAiService({
           apiKey: 'fake-key',

@@ -268,8 +268,8 @@ async function runTests() {
       assert.equal(seededOutfit.deleted_items_warning, 'Berisi item yang sudah dihapus');
     });
 
-    // TC-14 (FR-10) — Wardrobe kosong atau hanya berisi atasan -> Generate nonaktif; wardrobe berisi 1 terusan -> Generate aktif
-    await test('TC-14', 'Wardrobe kosong/hanya atasan -> Generate ditolak (422); berisi 1 terusan -> Generate aktif', async () => {
+    // TC-14 (FR-10) — Salah satu atasan, bawahan, atau terusan cukup untuk Generate
+    await test('TC-14', 'Wardrobe dengan satu atasan, satu bawahan, atau satu terusan -> Generate berhasil tanpa kategori pasangan yang tidak tersedia', async () => {
       const newUserReg = await req('POST', '/api/v1/auth/register', {
         full_name: 'Raka Pratama',
         email: 'raka.tc14@email.com',
@@ -284,6 +284,43 @@ async function runTests() {
         style_code: 'casual'
       }, rakaToken);
       assert.equal(genEmpty.status, 422);
+
+      const emptyWardrobe = await req('GET', '/api/v1/wardrobe/items', null, rakaToken);
+      assert.equal(emptyWardrobe.data.can_generate_outfit, false);
+
+      await req('POST', '/api/v1/wardrobe/items', {
+        category: 'top',
+        sub_category: 'Kemeja Linen',
+        primary_color: 'Putih'
+      }, rakaToken);
+      const topWardrobe = await req('GET', '/api/v1/wardrobe/items', null, rakaToken);
+      assert.equal(topWardrobe.data.can_generate_outfit, true);
+
+      const genTopOnly = await req('POST', '/api/v1/outfits/generate', {
+        occasion_code: 'kuliah_kampus',
+        style_code: 'casual'
+      }, rakaToken);
+      assert.equal(genTopOnly.status, 201);
+      assert.deepEqual(genTopOnly.data.outfit.items.map((item) => item.category), ['top']);
+
+      const bottomOnlyReg = await req('POST', '/api/v1/auth/register', {
+        full_name: 'Dewi Pratama',
+        email: 'dewi.tc14@email.com',
+        password: 'Password123',
+        ai_consent: true
+      });
+      const dewiToken = bottomOnlyReg.data.access_token;
+      await req('POST', '/api/v1/wardrobe/items', {
+        category: 'bottom',
+        sub_category: 'Rok Midi',
+        primary_color: 'Navy'
+      }, dewiToken);
+      const genBottomOnly = await req('POST', '/api/v1/outfits/generate', {
+        occasion_code: 'kuliah_kampus',
+        style_code: 'casual'
+      }, dewiToken);
+      assert.equal(genBottomOnly.status, 201);
+      assert.deepEqual(genBottomOnly.data.outfit.items.map((item) => item.category), ['bottom']);
 
       // Add 1 one_piece (Terusan) -> Generate succeeds!
       await req('POST', '/api/v1/wardrobe/items', {

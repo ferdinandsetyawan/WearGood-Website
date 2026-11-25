@@ -1538,27 +1538,43 @@ function createAppServer(customDbPath, options = {}) {
 
           const tryOnId = crypto.randomUUID();
           let tryOnUrl = null;
+          let tryOnMode = 'full_outfit';
 
           try {
-            tryOnUrl = await aiService.generateHfTryOnImage({
+            tryOnUrl = await aiService.generateTryOnImage({
               personBuffer: cleanPersonBuffer,
               personMimeType: magicCheck.mimeType || personMimeType,
               garmentImages,
               tryOnId,
               uploadsDir: UPLOADS_DIR
             });
-          } catch (hfErr) {
-            refundAiQuota(user.user_id, 'try_on');
-            const hfMessage = String(hfErr.message || 'Hugging Face IDM-VTON gagal diproses.');
-            const quotaExceeded = /zerogpu|quota|rate limit/i.test(hfMessage);
-            return sendError(
-              res,
-              quotaExceeded ? 429 : (hfErr.status || 502),
-              quotaExceeded ? 'HF_ZERO_GPU_QUOTA' : 'HF_TRY_ON_FAILED',
-              quotaExceeded
-                ? 'Kuota ZeroGPU Hugging Face sudah habis atau sedang reset. Masukkan HF_TOKEN atau tunggu reset kuota, lalu coba lagi.'
-                : hfMessage
-            );
+          } catch (imageModelErr) {
+            console.warn(`[WearGoods AI] Full-outfit try-on gagal; mencoba model atasan (${imageModelErr.message})`);
+          }
+
+          if (!tryOnUrl) {
+            tryOnMode = 'upper_body';
+            try {
+              tryOnUrl = await aiService.generateHfTryOnImage({
+                personBuffer: cleanPersonBuffer,
+                personMimeType: magicCheck.mimeType || personMimeType,
+                garmentImages,
+                tryOnId,
+                uploadsDir: UPLOADS_DIR
+              });
+            } catch (hfErr) {
+              refundAiQuota(user.user_id, 'try_on');
+              const hfMessage = String(hfErr.message || 'Hugging Face IDM-VTON gagal diproses.');
+              const quotaExceeded = /zerogpu|quota|rate limit/i.test(hfMessage);
+              return sendError(
+                res,
+                quotaExceeded ? 429 : (hfErr.status || 502),
+                quotaExceeded ? 'HF_ZERO_GPU_QUOTA' : (hfErr.code || 'HF_TRY_ON_FAILED'),
+                quotaExceeded
+                  ? 'Kuota ZeroGPU Hugging Face sudah habis atau sedang reset. Masukkan HF_TOKEN atau tunggu reset kuota, lalu coba lagi.'
+                  : hfMessage
+              );
+            }
           }
 
           if (!tryOnUrl) {
@@ -1569,6 +1585,7 @@ function createAppServer(customDbPath, options = {}) {
           return sendJson(res, 200, {
             try_on_image_url: createSignedStorageUrl(tryOnUrl),
             outfit_id: outfitId,
+            try_on_mode: tryOnMode,
             quota_remaining: quota.limit - quota.used
           });
         } catch (tryOnErr) {
@@ -1795,7 +1812,8 @@ function createAppServer(customDbPath, options = {}) {
         }
 
         const canGenerateOutfit =
-          (categoryCounts.top >= 1 && categoryCounts.bottom >= 1) ||
+          categoryCounts.top >= 1 ||
+          categoryCounts.bottom >= 1 ||
           categoryCounts.one_piece >= 1;
 
         const filtered = allFormatted.filter((item) => {
@@ -2029,14 +2047,16 @@ function createAppServer(customDbPath, options = {}) {
           accessory: activeItems.filter((i) => i.category === 'accessory')
         };
 
-        const hasTwoPiece = byCategory.top.length >= 1 && byCategory.bottom.length >= 1;
+        const hasTop = byCategory.top.length >= 1;
+        const hasBottom = byCategory.bottom.length >= 1;
+        const hasTwoPiece = hasTop && hasBottom;
         const hasOnePiece = byCategory.one_piece.length >= 1;
-        if (!hasTwoPiece && !hasOnePiece) {
+        if (!hasTop && !hasBottom && !hasOnePiece) {
           return sendError(
             res,
             422,
             'INSUFFICIENT_WARDROBE',
-            'Koleksi lemari belum mencukupi untuk menyusun outfit valid. Tambahkan minimal 1 Atasan dan 1 Bawahan, atau 1 Terusan terlebih dahulu.',
+            'Koleksi lemari belum mencukupi untuk menyusun outfit. Tambahkan minimal 1 Atasan, 1 Bawahan, atau 1 Terusan terlebih dahulu.',
             { action: 'TAMBAH_PAKAIAN' }
           );
         }
@@ -2057,31 +2077,48 @@ function createAppServer(customDbPath, options = {}) {
           });
         }
 
-        const candidates = [];
-        if (hasTwoPiece) {
-          for (const top of byCategory.top) {
-            for (const bottom of byCategory.bottom) {
-              const footwearList = byCategory.footwear.length ? byCategory.footwear : [null];
-              const accessoryList = byCategory.accessory.length ? byCategory.accessory : [null];
-              const outerList = byCategory.outerwear.length ? [null, ...byCategory.outerwear] : [null];
+        const footwearList = byCategory.footwear.length ? byCategory.footwear : [null];
+        const accessoryList = byCategory.accessory.length ? byCategory.accessory : [null];
+        const outerList = byCategory.outerwear.length ? [null, ...byCategory.outerwear] : [null];
+        const candidateCount =
+          (hasTwoPiece
+            ? byCategory.top.length * byCategory.bottom.length
+            : byCategory.top.length + byCategory.bottom.length) *
+            footwearList.length *
+            accessoryList.length *
+            outerList.length +
+          byCategory.one_piece.length * footwearList.length * accessoryList.length;
+
+        function* candidateCombinations() {
+          if (hasTwoPiece) {
+            for (const top of byCategory.top) {
+              for (const bottom of byCategory.bottom) {
+                for (const foot of footwearList) {
+                  for (const acc of accessoryList) {
+                    for (const out of outerList) {
+                      yield [top, bottom, out, foot, acc].filter(Boolean);
+                    }
+                  }
+                }
+              }
+            }
+          } else {
+            for (const item of [...byCategory.top, ...byCategory.bottom]) {
               for (const foot of footwearList) {
                 for (const acc of accessoryList) {
                   for (const out of outerList) {
-                    const combo = [top, bottom, out, foot, acc].filter(Boolean);
-                    candidates.push(combo);
+                    yield [item, out, foot, acc].filter(Boolean);
                   }
                 }
               }
             }
           }
-        }
-        if (hasOnePiece) {
-          for (const op of byCategory.one_piece) {
-            const footwearList = byCategory.footwear.length ? byCategory.footwear : [null];
-            const accessoryList = byCategory.accessory.length ? byCategory.accessory : [null];
-            for (const foot of footwearList) {
-              for (const acc of accessoryList) {
-                candidates.push([op, foot, acc].filter(Boolean));
+          if (hasOnePiece) {
+            for (const op of byCategory.one_piece) {
+              for (const foot of footwearList) {
+                for (const acc of accessoryList) {
+                  yield [op, foot, acc].filter(Boolean);
+                }
               }
             }
           }
@@ -2100,8 +2137,9 @@ function createAppServer(customDbPath, options = {}) {
           recentSignatures.add(oItems.map((x) => x.item_id).join('|'));
         }
 
-        let selectedItems = candidates[0];
-        for (const cand of candidates) {
+        let selectedItems;
+        for (const cand of candidateCombinations()) {
+          if (!selectedItems) selectedItems = cand;
           const sig = cand.map((x) => x.item_id).sort().join('|');
           if (!recentSignatures.has(sig)) {
             selectedItems = cand;
@@ -2143,7 +2181,7 @@ function createAppServer(customDbPath, options = {}) {
             });
             if (aiOutfit && aiOutfit.selectedItems?.length) {
               const aiSig = aiOutfit.selectedItems.map((x) => x.item_id).sort().join('|');
-              if (!recentSignatures.has(aiSig) || candidates.length <= 1) {
+              if (!recentSignatures.has(aiSig) || candidateCount <= 1) {
                 selectedItems = aiOutfit.selectedItems;
               }
               title = aiOutfit.title || title;

@@ -196,6 +196,9 @@ function createAiService(options = {}) {
       ? Boolean(options.imageGenerationEnabled)
       : process.env.GEMINI_ENABLE_IMAGE_GEN !== 'false';
   const timeoutMs = Number(options.timeoutMs || process.env.AI_TIMEOUT_MS || 20000);
+  const outfitTimeoutMs = Number(
+    options.outfitTimeoutMs || process.env.AI_OUTFIT_TIMEOUT_MS || Math.min(timeoutMs, 8000)
+  );
   const fallbackOnError =
     options.fallbackOnError !== undefined
       ? Boolean(options.fallbackOnError)
@@ -459,7 +462,8 @@ function createAiService(options = {}) {
       userNoteBlock,
       '',
       'Aturan wajib:',
-      '- Gunakan HANYA `item_id` yang ada di `wardrobe` (minimal `(top + bottom)` atau `one_piece`, maksimal 1 item per kategori; boleh menambah `outerwear`, `footwear`, dan `accessory` yang cocok).',
+      '- Gunakan HANYA `item_id` yang ada di `wardrobe`; pilih minimal satu item kategori `top`, `bottom`, atau `one_piece` (maksimal 1 item per kategori). Boleh menambah `outerwear`, `footwear`, dan `accessory` yang cocok.',
+      '- Jangan menambahkan kategori `top` atau `bottom` jika kategori tersebut tidak tersedia di `wardrobe`; satu item `top` atau `bottom` saja sudah cukup untuk outfit.',
       '- PERTAHANKAN seluruh `item_id` dalam `locked_item_ids`.',
       mode === 'customize'
         ? '- Karena `mode` adalah `customize`, ganti minimal satu item yang TIDAK dikunci agar kombinasinya berbeda dari sebelumnya (fokus ke `target_category_to_change` jika diisi).'
@@ -480,7 +484,7 @@ function createAiService(options = {}) {
           schema
         }
       }),
-      timeoutMs,
+      outfitTimeoutMs,
       'Layanan AI perangkai outfit melewati batas waktu. Pilihan Anda tetap tersimpan; silakan coba lagi.'
     );
 
@@ -505,9 +509,10 @@ function createAiService(options = {}) {
       }
     }
 
-    const hasTwoPiece = seenCategories.has('top') && seenCategories.has('bottom');
+    const hasTop = seenCategories.has('top');
+    const hasBottom = seenCategories.has('bottom');
     const hasOnePiece = seenCategories.has('one_piece');
-    if (!hasTwoPiece && !hasOnePiece) {
+    if (!hasTop && !hasBottom && !hasOnePiece) {
       return null;
     }
 
@@ -678,7 +683,7 @@ function createAiService(options = {}) {
               garmentBlob,
               garment.name || 'Fashion garment',
               true,
-              false,
+              true,
               30,
               42
             ]),
@@ -712,15 +717,21 @@ function createAiService(options = {}) {
       } catch (err) {
         lastError = err;
         console.warn(`[WearGoods AI] IDM-VTON percobaan ke-${attempt} gagal: ${err.message}`);
-        if (attempt < 2) {
+        const invalidInput = /IndexError/.test(String(err.message || ''));
+        if (attempt < 2 && !invalidInput) {
           await new Promise((r) => setTimeout(r, 2000));
         }
       }
     }
 
-    const hfError = new Error(`IDM-VTON Hugging Face gagal: ${lastError?.message || 'Koneksi terputus'}`);
-    hfError.status = lastError?.status || 502;
-    hfError.code = 'HF_TRY_ON_FAILED';
+    const invalidInput = /IndexError/.test(String(lastError?.message || ''));
+    const hfError = new Error(
+      invalidInput
+        ? 'Model tidak dapat mendeteksi pose dari foto. Coba foto portrait yang terang, tubuh terlihat dari kepala hingga pinggul, dan berada di tengah.'
+        : `IDM-VTON Hugging Face gagal: ${lastError?.message || 'Koneksi terputus'}`
+    );
+    hfError.status = invalidInput ? 422 : lastError?.status || 502;
+    hfError.code = invalidInput ? 'HF_INPUT_IMAGE_UNPROCESSABLE' : 'HF_TRY_ON_FAILED';
     throw hfError;
   }
 
@@ -735,7 +746,10 @@ function createAiService(options = {}) {
         ? personMimeType
         : 'image/jpeg';
 
-      const garmentContent = (garmentImages || []).slice(0, 5).map((item, index) => ({
+      const tryOnGarments = (garmentImages || [])
+        .filter((item) => ['top', 'bottom', 'one_piece', 'outerwear'].includes(item.category))
+        .slice(0, 5);
+      const garmentContent = tryOnGarments.map((item) => ({
         type: 'image',
         data: Buffer.from(item.buffer).toString('base64'),
         mime_type: item.mimeType === 'image/png' || item.mimeType === 'image/webp'
@@ -743,12 +757,21 @@ function createAiService(options = {}) {
           : 'image/jpeg'
       }));
 
-      const itemNames = (garmentImages || []).map((item) => item.name).filter(Boolean).join(', ');
+      const garmentInstructions = tryOnGarments.map((item, index) => {
+        const categoryLabel = {
+          top: 'top',
+          bottom: 'bottom (pants or skirt)',
+          one_piece: 'one-piece outfit',
+          outerwear: 'outerwear'
+        }[item.category];
+        return `Garment reference ${index + 2} is the selected ${categoryLabel}; apply it to that body area.`;
+      });
       const promptText = [
         'Create a realistic full-body fashion try-on preview.',
-        'Use the first image as the real person. Preserve the person face, body shape, pose, skin tone, hair, and natural proportions.',
-        'Replace or dress the person with every provided wardrobe garment in a natural, correctly fitted way.',
-        `The wardrobe items are: ${itemNames || 'the provided fashion items'}.`,
+        'Use image 1 as the person and each following image as a separate selected wardrobe garment.',
+        'Preserve the person face, body shape, pose, skin tone, hair, and natural proportions.',
+        'Apply every garment to its matching body area, including selected bottoms on the lower body; do not leave the original pants when a bottom reference is provided.',
+        ...garmentInstructions,
         'Keep only one person, maintain the original camera angle and lighting, and produce a photorealistic editorial full-body portrait.',
         'Do not change the face or identity. Do not show clothing on a hanger, mannequin, dummy, collage, or flat lay.',
         'Do not add text, logos, watermarks, split panels, or extra people. Preserve a clean realistic background.'

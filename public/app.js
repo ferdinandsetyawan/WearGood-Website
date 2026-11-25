@@ -940,7 +940,9 @@ function updateBriefWardrobeValidation() {
   const submitBtn = document.getElementById('btn-submit-generate');
   const capPill = document.getElementById('brief-combination-capacity');
 
-  const twoPieceCombos = Math.max(0, counts.top * counts.bottom * Math.max(1, counts.footwear));
+  const twoPieceCombos = counts.top > 0 && counts.bottom > 0
+    ? counts.top * counts.bottom * Math.max(1, counts.footwear)
+    : (counts.top + counts.bottom) * Math.max(1, counts.footwear);
   const totalCombos = twoPieceCombos + counts.one_piece * Math.max(1, counts.footwear);
 
   if (capPill) {
@@ -1062,7 +1064,11 @@ function bindTryOnEvents() {
 
       result.innerHTML = `
         <img src="${escapeHtml(response.try_on_image_url)}" alt="Hasil virtual try-on" style="width:100%;border-radius:8px;object-fit:contain;" />
-        <p class="tiny-muted mt-8">Hasil AI dapat berbeda dari bentuk, kain, atau ukuran asli.</p>
+        <p class="tiny-muted mt-8">${
+          response.try_on_mode === 'upper_body'
+            ? 'Preview fallback hanya mengganti atasan; bawahan tetap dari foto awal.'
+            : 'Hasil AI dapat berbeda dari bentuk, kain, atau ukuran asli.'
+        }</p>
       `;
       await refreshUsageQuota();
     } catch (error) {
@@ -1254,7 +1260,7 @@ function bindCariOutfitEvents() {
 }
 
 // Staged Animated Loading Modal for "Mencari yang selaras"
-async function playStagedLoadingAnimation() {
+function playStagedLoadingAnimation() {
   const fill = document.getElementById('loading-bar-fill-el');
   const pct = document.getElementById('loading-pct-text');
   const s1 = document.getElementById('load-step-1');
@@ -1275,39 +1281,44 @@ async function playStagedLoadingAnimation() {
   };
 
   setStage(28, ['done', 'active', 'pending']);
-  await new Promise((r) => setTimeout(r, 220));
-  setStage(68, ['done', 'done', 'active']);
-  await new Promise((r) => setTimeout(r, 240));
-  setStage(100, ['done', 'done', 'done']);
-  await new Promise((r) => setTimeout(r, 120));
+  const timers = [];
+  timers.push(setTimeout(() => {
+    setStage(68, ['done', 'done', 'active']);
+    timers.push(setTimeout(() => setStage(100, ['done', 'done', 'done']), 240));
+  }, 220));
+
+  return () => {
+    timers.forEach(clearTimeout);
+    setStage(100, ['done', 'done', 'done']);
+  };
 }
 
 async function triggerGenerateOutfit() {
   openModal('modal-memuat');
+  const finishLoadingAnimation = playStagedLoadingAnimation();
   try {
-    const [data] = await Promise.all([
-      apiFetch('/api/v1/outfits/generate', {
-        method: 'POST',
-        body: JSON.stringify({
-          occasion_code: state.brief.occasion_code,
-          style_code: state.brief.style_code,
-          user_prompt: state.brief.user_prompt,
-          weather_context: state.brief.weather,
-          location_context: state.brief.location,
-          date_label: state.brief.date_label
-        })
-      }),
-      playStagedLoadingAnimation()
-    ]);
+    const data = await apiFetch('/api/v1/outfits/generate', {
+      method: 'POST',
+      body: JSON.stringify({
+        occasion_code: state.brief.occasion_code,
+        style_code: state.brief.style_code,
+        user_prompt: state.brief.user_prompt,
+        weather_context: state.brief.weather,
+        location_context: state.brief.location,
+        date_label: state.brief.date_label
+      })
+    });
 
+    finishLoadingAnimation();
     closeModal('modal-memuat');
     state.activeOutfit = data.outfit;
     state.inspirations = data.inspirations || [];
-    await refreshUsageQuota();
+    refreshUsageQuota();
 
     renderHasilRekomendasi();
     setCariSubView('hasil');
   } catch (err) {
+    finishLoadingAnimation();
     closeModal('modal-memuat');
     document.getElementById('modal-gagal-message').textContent =
       err.message || 'Periksa koneksi internet, lalu coba lagi. Aktivitas dan preferensi yang kamu isi tetap tersimpan.';
